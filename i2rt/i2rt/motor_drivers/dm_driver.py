@@ -13,7 +13,7 @@ from i2rt.motor_drivers.can_interface import CanInterface
 
 from i2rt.utils.utils import RateRecorder
 
-# log_level = os.getenv("LOGLEVEL", "ERROR").upper()
+log_level = os.getenv("LOGLEVEL", "ERROR").upper()
 
 # if no log_level is set, set it to WARNING
 logging.basicConfig(level=logging.ERROR)

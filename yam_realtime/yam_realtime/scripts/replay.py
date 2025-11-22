@@ -101,8 +101,6 @@ def main(args: Args):
         reset_robot(agent, env, 'left', data_replayer.demo[0]['left_raw_action'])
         reset_robot(agent, env, 'right', data_replayer.demo[0]['right_raw_action'])
         data_replayer.replay(env, camera_trajectory, robot_trajectory)
-        reset_robot(agent, env, 'left')
-        reset_robot(agent, env, 'right')
         
 
     except Exception as e:
@@ -111,6 +109,8 @@ def main(args: Args):
     finally:
         # Cleanup
         logger.info("Shutting down...")
+        reset_robot(agent, env, 'left')
+        reset_robot(agent, env, 'right')
         if "env" in locals():
             env.close()
         if "agent" in locals():

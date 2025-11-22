@@ -49,12 +49,22 @@ class DataSaver:
         obs['joint'] = {'left': np.concatenate([obs['left']['joint_pos'], obs['left']['gripper_pos']]), 'right': np.concatenate([obs['right']['joint_pos'], obs['right']['gripper_pos']])}
         self.buffer.append(obs.copy())
 
-    def save_episode_json(self, pickle_only=False):
-        if not self.buffer:
+    def save_episode_json(self, buffer, pickle_only=False):
+        if not buffer:
             logger.warning("Empty buffer, no observations to save.")
 
-        logger.info(f"Saving episode {self.traj_count} to {self.save_dir} with {len(self.buffer)} observations.")
-        buffer_dict = self._get_buffer_dict()
+        logger.info(f"Saving episode {self.traj_count} to {self.save_dir} with {len(buffer)} observations.")
+        
+        def get_buffer_dict(buffer):
+            logger.info(f"Converting buffer to dictionary with {len(buffer)} observations.")
+            buffer_dict = {}
+            if buffer == []:
+                return buffer_dict
+            for key in buffer[0].keys():
+                buffer_dict[key] = np.stack([obs[key] for obs in buffer])
+            return buffer_dict
+        
+        buffer_dict = get_buffer_dict(buffer)
         if buffer_dict == {}:
             logger.warning("Empty buffer, no observations to save.")
             return
@@ -129,17 +139,8 @@ class DataSaver:
                     json.dump(existing_data, f, indent=4)
                 logger.info(f"Added {len(json_data)} observations to {json_save_path}")
         # Just to let user know that the episode is saved
-        logger.info(f"Complete!!!! Saved episode {self.traj_count} to {self.save_dir} with {len(self.buffer)} observations.")
+        logger.info(f"Complete!!!! Saved episode {self.traj_count} to {self.save_dir} with {len(buffer)} observations.")
         self.traj_count += 1
-    
-    def _get_buffer_dict(self):
-        logger.info(f"Converting buffer to dictionary with {len(self.buffer)} observations.")
-        buffer_dict = {}
-        if self.buffer == []:
-            return buffer_dict
-        for key in self.buffer[0].keys():
-            buffer_dict[key] = np.stack([obs[key] for obs in self.buffer])
-        return buffer_dict
     
     def save_image(self, image, path):
         Image.fromarray(image).save(path)

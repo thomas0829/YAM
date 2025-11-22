@@ -215,7 +215,7 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
                 act = agent.act(obs)
                 action = {'left': {'pos':act['left']['pos']}, 'right': {'pos':act['right']['pos']}}
                 delta_cumulative = sum_delta_action(delta_cumulative, act)
-                if time.time() - last_save_time > (1/10):
+                if time.time() - last_save_time > (1/hz):
                     act["left"]["delta"] = delta_cumulative["left"]["delta"]
                     act["right"]["delta"] = delta_cumulative["right"]["delta"]
                     data_saver.add_observation(obs, act)
@@ -232,7 +232,7 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
                 logger.info(f"No data collected, skipping save")
                 continue
             # data_saver.save_episode_json()
-            saver_thread.save_episode(data_saver.buffer)
+            saver_thread.save_episode(data_saver.buffer.copy())
             num_traj +=1
             logger.info(f"Successfully collected data")
         else:

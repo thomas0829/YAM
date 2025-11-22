@@ -173,4 +173,7 @@ dmypy.json
 cython_debug/
 
 # YAM dataset
-lerobot/common/datasets/yam_dp_dataset_testing/data
+lerobot/common/datasets/yam_dp_dataset/*
+
+# data
+lerobot/common/datasets/yam_fold_towel_dp_dataset/*

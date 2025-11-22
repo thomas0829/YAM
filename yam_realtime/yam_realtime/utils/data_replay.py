@@ -2,6 +2,7 @@ import ast
 import concurrent
 import json
 import pickle
+import time
 from turtle import right
 import torch
 from tqdm import tqdm
@@ -353,6 +354,24 @@ class DataReplayer():
             log_data_utils(f"Front camera images: {len(self.front_rgb_paths)}", "info")
         
         try:
+            def smooth_move_while_inference_envstep(env: RobotEnv, action):
+                current_left_joint = env.robot("left").get_joint_pos()
+                current_right_joint = env.robot("right").get_joint_pos()
+
+                target_left_joint = action["left"]["pos"]
+                target_right_joint = action["right"]["pos"]
+
+                steps = 10
+                obs = None
+                for i in range(steps + 1):
+                    alpha = i / steps  # Interpolation factor
+                    target_pos_left = (1 - alpha) * current_left_joint + alpha * target_left_joint  # Linear interpolation
+                    target_pos_right = (1 - alpha) * current_right_joint + alpha * target_right_joint
+                    obs = env.step({"left" : {"pos" : target_pos_left}, "right" : {"pos": target_pos_right}})
+                    time.sleep(0.5 / steps)
+
+                return obs
+
             if robot_trajectory:
                 for step_idx in tqdm(range(demo_length), desc="Replaying episode"):
                     act = actions[step_idx]
@@ -368,7 +387,8 @@ class DataReplayer():
                     # if visual:
                     #     self.visualize_episode(obs, step_idx, act)
                     
-                    env.step(act)
+                    # env.step(act)
+                    obs = smooth_move_while_inference_envstep(env, act)
                     
                     # Handle window events for visualization
                     # if visual:

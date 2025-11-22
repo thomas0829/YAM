@@ -198,7 +198,7 @@ def reset_robot(agent: Agent, env: RobotEnv, side: str, target_joint_positions: 
 #         env.robot(side).command_joint_pos(target_pos)
 #         time.sleep(0.5 / steps)
 
-def smooth_move_while_inference_envstep(agent: Agent, env: RobotEnv, action):
+def smooth_move_while_inference_envstep(env: RobotEnv, action):
     current_left_joint = env.robot("left").get_joint_pos()
     current_right_joint = env.robot("right").get_joint_pos()
 
@@ -260,7 +260,7 @@ def _run_control_loop(env: RobotEnv, config: LaunchConfig, policy: DiffusionPoli
         # smooth_move_while_inference(agent, env, "left", action["left"]["pos"])
         # smooth_move_while_inference(agent, env, "right", action["right"]["pos"])
 
-        obs = smooth_move_while_inference_envstep(agent, env, action)
+        obs = smooth_move_while_inference_envstep(env, action)
 
         # obs = env.step(action)
 

@@ -72,8 +72,10 @@ def load_molmoact_test_data(data_dir: str) -> List[Dict[str, Any]]:
         try:
             left_joint = np.array([json.loads(frame["left_joint"]) for frame in episode_data], dtype=np.float32)
             right_joint = np.array([json.loads(frame["right_joint"]) for frame in episode_data], dtype=np.float32)
-            left_actions = np.array([json.loads(frame["left_delta_action"]) for frame in episode_data], dtype=np.float32)
-            right_actions = np.array([json.loads(frame["right_delta_action"]) for frame in episode_data], dtype=np.float32)
+            # left_actions = np.array([json.loads(frame["left_delta_action"]) for frame in episode_data], dtype=np.float32)
+            # right_actions = np.array([json.loads(frame["right_delta_action"]) for frame in episode_data], dtype=np.float32)
+            left_actions = np.array([json.loads(frame["left_joint"]) for frame in episode_data], dtype=np.float32)
+            right_actions = np.array([json.loads(frame["right_joint"]) for frame in episode_data], dtype=np.float32)
 
             qpos = np.concatenate([left_joint, right_joint], axis=1)
             actions = np.concatenate([left_actions, right_actions], axis=1)
@@ -148,10 +150,16 @@ def create_lerobot_dataset(episodes: List[Dict[str, Any]], output_dir: str, fps:
             "names": ["left_joint1", "left_joint2", "left_joint3", "left_joint4", "left_joint5", "left_joint6", "left_gripper", "right_joint1", "right_joint2", "right_joint3", "right_joint4", "right_joint5", "right_joint6", "right_gripper"] # left joint, right joint
         },
         # Actions (required) (delta)
-        "action": {
+        # "action": { 
+        #     "dtype": "float32",
+        #     "shape": (16,),  # action dimension
+        #     "names": ["left_dx", "left_dy", "left_dz", "left_w", "left_wx", "left_wy", "left_wz", "left_gripper", "right_dx", "right_dy", "right_dz", "right_w", "right_wx", "right_wy", "right_wz", "right_gripper"]
+        # },
+        # Actions (required) (joint)
+        "action": { 
             "dtype": "float32",
-            "shape": (16,),  # action dimension
-            "names": ["left_dx", "left_dy", "left_dz", "left_w", "left_wx", "left_wy", "left_wz", "left_gripper", "right_dx", "right_dy", "right_dz", "right_w", "right_wx", "right_wy", "right_wz", "right_gripper"]
+            "shape": (14,),  # action dimension
+            "names": ["left_m1", "left_m2", "left_m3", "left_m4", "left_m5", "left_m6", "left_m7", "right_m8", "right_m9", "right_m3", "right_m4", "right_m5", "right_m6", "right_m7"]
         },
         # # End-effector position (optional)
         # "observation.ee_pos": {

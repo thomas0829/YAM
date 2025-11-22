@@ -23,8 +23,7 @@ class EpisodeSaverThread(threading.Thread):
                 episode_data = self.episode_queue.get(timeout=5)  # Wait for 5 seconds
                 if episode_data is None:  # Exit signal
                     break
-                self.data_saver.buffer = episode_data
-                self.data_saver.save_episode_json(pickle_only=False)
+                self.data_saver.save_episode_json(episode_data, pickle_only=False)
                 self.episode_queue.task_done()  # Mark the task as done
             except queue.Empty:
                 continue
