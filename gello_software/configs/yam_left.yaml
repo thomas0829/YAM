@@ -1,6 +1,6 @@
 robot:
   _target_: gello.robots.yam.YAMRobot
-  channel: can_left
+  channel: can_right
 agent:
   _target_: gello.agents.gello_agent.GelloAgent
   port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAO9WPU-if00-port0
@@ -9,7 +9,31 @@ agent:
     joint_ids: [1, 2, 3, 4, 5, 6]
     joint_offsets: [3.14159, 3.14159, 3.14159, 3.14159, 3.14159, 3.14159]
     joint_signs: [1.0, -1.0, -1.0, -1.0, 1.0, 1.0]
-    gripper_config: [7, 48.869140625, 108.369140625]
+    gripper_config: [7, 55.869140625, 108.369140625]
   start_joints: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
 hz: 30
 max_steps: 1000
+
+# Data collection configuration
+collection:
+  max_episode_length: 10000
+  act_noise_std: 0.001
+  no_ops_threshold: 0.004
+  no_ops_last_detected_time: 3
+  lock_rotation_detected_time: 1
+
+# Data storage configuration
+storage:
+  episodes: 30
+  base_dir: "/home/sean/Desktop/YAM/gello_software/data"
+  task_directory: "testing"
+  language_instruction: "testing"
+  teleop_device: "oculus" # ["oculus", "keyboard", "gello", "none"]
+  save_format: "json" # ["json", "npy"]
+  old_format: false
+
+# Policy configuration
+policy:
+  _target_: lerobot.common.policies.diffusion.configuration_diffusion.DiffusionConfig
+  repo_id: "/home/sean/Desktop/YAM/lerobot/lerobot/common/datasets/yam_fold_towel_dp_dataset"
+  checkpoint_path: "/home/sean/Desktop/YAM/lerobot/outputs/train/2025-11-21/01-14-07_diffusion/checkpoints/100000/pretrained_model"

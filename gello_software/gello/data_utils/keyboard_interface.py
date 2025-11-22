@@ -3,10 +3,14 @@ import pygame
 NORMAL = (128, 128, 128)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
+BLACK = (0, 0, 0)
 
 KEY_START = pygame.K_s
-KEY_CONTINUE = pygame.K_c
+# KEY_CONTINUE = pygame.K_c
 KEY_QUIT_RECORDING = pygame.K_q
+KEY_SAVE = pygame.K_a
+KEY_DISCARD = pygame.K_b
 
 
 class KBReset:
@@ -16,22 +20,34 @@ class KBReset:
         self._set_color(NORMAL)
         self._saved = False
 
+    # def update(self) -> str:
+    #     pressed_last = self._get_pressed()
+    #     if KEY_QUIT_RECORDING in pressed_last:
+    #         self._set_color(RED)
+    #         self._saved = False
+    #         return "normal"
+
+    #     if self._saved:
+    #         return "save"
+
+    #     if KEY_START in pressed_last:
+    #         self._set_color(GREEN)
+    #         self._saved = True
+    #         return "start"
+
+    #     self._set_color(NORMAL)
+    #     return "normal"
     def update(self) -> str:
         pressed_last = self._get_pressed()
-        if KEY_QUIT_RECORDING in pressed_last:
-            self._set_color(RED)
-            self._saved = False
-            return "normal"
-
-        if self._saved:
-            return "save"
-
         if KEY_START in pressed_last:
-            self._set_color(GREEN)
-            self._saved = True
+            self._set_color(BLUE)
             return "start"
-
-        self._set_color(NORMAL)
+        if KEY_SAVE in pressed_last:
+            self._set_color(GREEN)
+            return "save"
+        if KEY_DISCARD in pressed_last:
+            self._set_color(RED)
+            return "discard"
         return "normal"
 
     def _get_pressed(self):
