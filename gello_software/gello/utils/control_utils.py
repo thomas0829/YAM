@@ -1,17 +1,12 @@
 """Shared utilities for robot control loops."""
 
-from calendar import c
-from copy import deepcopy
 import datetime
 import os
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from PIL import Image
-from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
 import numpy as np
-import torch
 import tqdm
 
 from gello.agents.agent import Agent
@@ -21,10 +16,6 @@ import logging
 from gello.data_utils.data_saver import DataSaver
 from gello.data_utils.keyboard_interface import KBReset
 from gello.data_utils.data_saver_thread import EpisodeSaverThread
-from gello.utils.launch_utils import instantiate_from_dict
-from gello.dynamixel.driver import DynamixelDriver
-from gello.utils.logging_utils import log_collect_demos
-from gello.data_utils.data_replay import DataReplayer
 DEFAULT_MAX_JOINT_DELTA = 1.0
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -248,6 +239,9 @@ def run_control_loop_prior(
     start_time = time.time()
     last_save_time = time.time()
 
+    # implemented in env.py to allow dynamic offset during data collection
+    env.set_original_offset(agent.act(env.get_obs()))
+
     while num_traj <= left_cfg['storage']['episodes']:
         obs = env.get_obs()
         data_saver.reset_buffer()
@@ -264,6 +258,7 @@ def run_control_loop_prior(
                 logger.info(f"Successfully pressed 's', starting to collect data")
                 time.sleep(1)
                 obs = env.get_obs()
+                env.set_dynamic_offset(agent.act(obs))
                 break
         logger.info(f"Press 'a' to save the data, press 'b' to discard the data")
 
@@ -294,130 +289,7 @@ def run_control_loop_prior(
             move_to_start_position(env, agent, left_cfg=left_cfg, right_cfg=right_cfg)
         else:
             move_to_start_position(env, agent, left_cfg=left_cfg)
-
     
     saver_thread.stop()
     saver_thread.join()
     logger.info(f"Finished collecting data")
-
-DEVICE = os.environ.get("LEROBOT_TEST_DEVICE", "cuda") if torch.cuda.is_available() else "cpu"
-def run_control_loop_eval(
-    env: RobotEnv,
-    agent: Agent,
-    left_cfg: dict = None,
-    right_cfg: Optional[dict] = None,
-    policy: DiffusionPolicy = None,
-    print_timing: bool = True,
-    use_colors: bool = False,
-) -> None:
-    """Run the main control loop.
-
-    Args:
-        env: Robot environment
-        agent: Agent for control
-        save_interface: Optional save interface for data collection
-        print_timing: Whether to print timing information
-        use_colors: Whether to use colored terminal output
-    """
-    # Check if we can use colors
-    colors_available = False
-    if use_colors:
-        try:
-            from termcolor import colored
-
-            colors_available = True
-            start_msg = colored("\nStart 🚀🚀🚀", color="green", attrs=["bold"])
-        except ImportError:
-            start_msg = "\nStart 🚀🚀🚀"
-    else:
-        start_msg = "\nStart 🚀🚀🚀"
-
-    print(start_msg)
-
-    start_time = time.time()
-    obs = env.get_obs()
-    policy.reset()
-    logger.info("Starting policy inference...")
-
-    while True:
-        observation = preprocess_observation(obs)
-        observation = {key: observation[key].to(DEVICE, non_blocking=True) for key in observation}
-        log_collect_demos("Running policy inference...", "info")
-        start_time = time.time()
-        actions = policy.select_action(observation)
-        inference_time = time.time() - start_time
-        log_collect_demos(f"Policy inference completed in {inference_time:.3f}s", "success")
-        log_collect_demos(f"Generated {len(actions)} action(s)", "data_info")
-        actions = actions.squeeze(0).detach().cpu().numpy()
-        obs = env.step(actions)
-
-def preprocess_observation(observations: dict[str, np.ndarray]) -> dict[str, torch.Tensor]:
-    return_observations = {}
-    
-    # Define the target size
-    TARGET_HEIGHT = 256
-    TARGET_WIDTH = 342
-
-    # Map cameras
-    camera_mapping = {"image_left_rgb": 'left', "image_right_rgb": 'right', "image_front_rgb": 'front'}
-    for cam_name, cam_idx in camera_mapping.items():
-        if cam_name in observations:
-            img_np = observations[cam_name]
-            
-            # 1. Convert NumPy array to PIL Image
-            img_pil = Image.fromarray(img_np)
-            
-            # 2. Resize the image
-            # The order in PIL.Image.resize is (width, height)
-            img_resized_pil = img_pil.resize((TARGET_WIDTH, TARGET_HEIGHT))
-            
-            # 3. Convert resized PIL Image back to NumPy array
-            img_resized_np = np.array(img_resized_pil)
-            
-            # 4. Convert to Tensor, permute, add batch dim, and normalize
-            img_tensor = torch.from_numpy(img_resized_np).float().permute(2, 0, 1).cuda().unsqueeze(0)
-            return_observations[f"observation.images.camera_{cam_idx}"] = img_tensor
-
-    # Concatenate robot state
-    state = np.concatenate([
-        observations["left_joint"],
-        observations["right_joint"],
-    ])
-    state_tensor = torch.from_numpy(state).float().cuda().unsqueeze(0)  # 1,N
-    return_observations["observation.state"] = state_tensor
-
-    return return_observations
-
-
-def run_control_loop_eval_open_loop(
-    env: RobotEnv,
-    agent: Agent,
-    left_cfg: dict = None,
-    right_cfg: Optional[dict] = None,
-    policy: DiffusionPolicy = None,
-    data_replayer: DataReplayer = None,
-) -> None:
-    """Run the main control loop.
-    """
-    logger.info("Starting policy inference...")
-    # Init environment and warm up agent
-    policy.reset()
-    obs = env.get_obs()
-
-    # Main control loop
-    demo_length = data_replayer.get_demo_length()
-    obs_index = 0
-    while obs_index < demo_length:
-        obs = data_replayer.get_observation(obs_index)
-        input_dict = preprocess_observation(obs)
-        log_collect_demos("Running policy inference...", "info")
-
-        start_time = time.time()
-        actions = policy.select_action(input_dict)
-        inference_time = time.time() - start_time
-        log_collect_demos(f"Policy inference completed in {inference_time:.3f}s", "success")
-        log_collect_demos(f"Generated {len(actions)} action(s)", "data_info")
-        actions = actions.squeeze(0).detach().cpu().numpy()
-        obs = env.step(actions)
-        obs_index += 1
-    logger.info("Finished policy inference")

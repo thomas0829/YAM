@@ -1,6 +1,6 @@
 robot:
   _target_: gello.robots.yam.YAMRobot
-  channel: can0
+  channel: can_right
 agent:
   _target_: gello.agents.gello_agent.GelloAgent
   port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAO9WCV-if00-port0

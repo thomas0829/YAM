@@ -41,8 +41,8 @@ station_metadata:
   
 policy:
   _target_: lerobot.common.policies.diffusion.configuration_diffusion.DiffusionConfig
-  repo_id: "/home/sean/Desktop/YAM/lerobot/lerobot/common/datasets/yam_dp_dataset"
-  checkpoint_path: "/home/sean/Desktop/YAM/lerobot/outputs/train/2025-11-12/01-53-36_diffusion/checkpoints/080000/pretrained_model"
+  repo_id: "/home/sean/Desktop/YAM/lerobot/lerobot/common/datasets/yam_fold_towel_dp_dataset"
+  checkpoint_path: "/home/sean/Desktop/YAM/lerobot/outputs/train/2025-11-21/01-14-07_diffusion/checkpoints/100000/pretrained_model"
 
 
 # Data collection configuration
@@ -56,7 +56,8 @@ collection:
 # Data storage configuration
 storage:
   episodes: 30
-  base_dir: "/home/sean/Desktop/YAM/yam_realtime/yam_realtime/scripts/delta_trajectory"
+  # base_dir: "/home/sean/Desktop/YAM/yam_realtime/yam_realtime/scripts/delta_trajectory"
+  base_dir: "/home/sean/Desktop/YAM/gello_software/data"
   task_directory: "testing"
   language_instruction: "testing"
   teleop_device: "oculus" # ["oculus", "keyboard", "gello", "none"]

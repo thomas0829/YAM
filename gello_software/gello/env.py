@@ -29,6 +29,17 @@ class RobotEnv:
         self._rate = Rate(control_rate_hz)
         self._camera_dict = {} if camera_dict is None else camera_dict
 
+    # dynamic offset is used in data collection to make sure the same
+    # starting position between each episode.
+        self._dynamic_offset = np.zeros(self._robot.num_dofs())
+        self._original_offset = np.zeros(self._robot.num_dofs())
+
+    def set_original_offset(self, gello_joints: np.ndarray) -> None:
+        self._original_offset = gello_joints - self._robot.get_joint_state()
+
+    def set_dynamic_offset(self, gello_joints: np.ndarray) -> None:
+        self._dynamic_offset = gello_joints - self._robot.get_joint_state() - self._original_offset
+
     def robot(self) -> Robot:
         """Get the robot object.
 
@@ -40,7 +51,7 @@ class RobotEnv:
     def __len__(self):
         return 0
 
-    def step(self, joints: np.ndarray) -> Dict[str, Any]:
+    def step(self, joints: np.ndarray, reset: Optional[bool] = False) -> Dict[str, Any]:
         """Step the environment forward.
 
         Args:
@@ -53,7 +64,12 @@ class RobotEnv:
             self._robot.num_dofs()
         ), f"input:{len(joints)}, robot:{self._robot.num_dofs()}"
         assert self._robot.num_dofs() == len(joints)
-        self._robot.command_joint_state(joints)
+
+        # to avoid using dynamic offset when resetting the robot, we use the reset flag.
+        if reset:
+            self._robot.command_joint_state(joints)
+        else:
+            self._robot.command_joint_state(joints - self._dynamic_offset)
         self._rate.sleep()
         return self.get_obs()
 

@@ -227,7 +227,7 @@ def move_to_start_position(
 
     print(f"Moving robot to start position: {reset_joints}")
     for jnt in np.linspace(curr_joints, reset_joints, steps):
-        env.step(jnt)
+        env.step(jnt, reset=True)
         time.sleep(0.001)
 
 

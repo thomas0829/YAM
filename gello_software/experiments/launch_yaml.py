@@ -248,7 +248,6 @@ def main():
     env = RobotEnv(robot_client, control_rate_hz=cfg.get("hz", 30))
 
     # Store global variables for cleanup
-    # Store global variables for cleanup
     global _env, _bimanual, _left_cfg, _right_cfg
     _env = env
     _bimanual = bimanual

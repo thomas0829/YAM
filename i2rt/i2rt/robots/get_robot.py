@@ -51,6 +51,9 @@ def get_yam_robot(
     motor_directions = [1, 1, 1, 1, 1, 1]
     kp = np.array([80, 80, 80, 40, 10, 10])
     kd = np.array([5, 5, 5, 1.5, 1.5, 1.5])
+    # kp = np.array([5, 5, 5, 3, 2, 2]) 
+    # kd = np.array([0.5, 0.5, 0.5, 0.6, 0.4, 0.4])
+    
     if with_gripper:
         motor_type = gripper_type.get_motor_type()
         gripper_kp, gripper_kd = gripper_type.get_motor_kp_kd()

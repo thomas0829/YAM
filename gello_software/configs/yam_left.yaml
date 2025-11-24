@@ -1,6 +1,6 @@
 robot:
   _target_: gello.robots.yam.YAMRobot
-  channel: can_right
+  channel: can_left
 agent:
   _target_: gello.agents.gello_agent.GelloAgent
   port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAO9WPU-if00-port0
@@ -24,10 +24,10 @@ collection:
 
 # Data storage configuration
 storage:
-  episodes: 30
+  episodes: 50
   base_dir: "/home/sean/Desktop/YAM/gello_software/data"
-  task_directory: "testing"
-  language_instruction: "testing"
+  task_directory: "stack_cubes"
+  language_instruction: "stack cubes"
   teleop_device: "oculus" # ["oculus", "keyboard", "gello", "none"]
   save_format: "json" # ["json", "npy"]
   old_format: false
@@ -35,5 +35,5 @@ storage:
 # Policy configuration
 policy:
   _target_: lerobot.common.policies.diffusion.configuration_diffusion.DiffusionConfig
-  repo_id: "/home/sean/Desktop/YAM/lerobot/lerobot/common/datasets/yam_fold_towel_dp_dataset"
-  checkpoint_path: "/home/sean/Desktop/YAM/lerobot/outputs/train/2025-11-21/01-14-07_diffusion/checkpoints/100000/pretrained_model"
+  repo_id: "/home/sean/Desktop/YAM/lerobot_v30/src/lerobot/datasets/yam_fold_towel_dp_dataset_v3_test"
+  checkpoint_path: "hqfang/nov22-yam-fold_towel-ditx-vit-clip-flow_matching"
