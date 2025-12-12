@@ -93,12 +93,12 @@ policy = DiffusionPolicy.from_pretrained(model_id)
 Notes: this function ```preprocess_observation``` in ```experiments/launch_yaml_eval.py``` is used to convert the robot observation into model input format. Make sure its output matches the 
 model desired input. Currently, it doesn't passed in the language instruction. You can add it in here if needed. 
 ```bash
-    # Define the target image size
-    TARGET_HEIGHT = 256
-    TARGET_WIDTH = 342
+# Define the target image size
+TARGET_HEIGHT = 256
+TARGET_WIDTH = 342
 
-    # Map cameras "observation : model"
-    camera_mapping = {"left_camera_rgb": 'left', "right_camera_rgb": 'right', "front_camera_rgb": 'front'}
+# Map cameras "observation : model"
+camera_mapping = {"left_camera_rgb": 'left', "right_camera_rgb": 'right', "front_camera_rgb": 'front'}
 ```
 
 
