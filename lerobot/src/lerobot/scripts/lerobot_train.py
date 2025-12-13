@@ -19,9 +19,6 @@ from contextlib import nullcontext
 from pprint import pformat
 from typing import Any
 
-import os
-import debugpy
-
 import torch
 from accelerate import Accelerator
 from termcolor import colored
@@ -32,7 +29,7 @@ from lerobot.configs.train import TrainPipelineConfig
 from lerobot.datasets.factory import make_dataset
 from lerobot.datasets.sampler import EpisodeAwareSampler
 from lerobot.datasets.utils import cycle
-from lerobot.envs.factory import make_env
+from lerobot.envs.factory import make_env, make_env_pre_post_processors
 from lerobot.envs.utils import close_envs
 from lerobot.optim.factory import make_optimizer_and_scheduler
 from lerobot.policies.factory import make_policy, make_pre_post_processors
@@ -145,13 +142,6 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
     """
     cfg.validate()
 
-    if cfg.debugger:
-        if os.environ.get("RANK", "0") == "0":
-            # Listen on port 5678 (adjust if needed)
-            debugpy.listen(("172.17.0.1", 5678))
-            print("Debugger is listening on port 5678. Waiting for client to attach...")
-            debugpy.wait_for_client()
-
     # Create Accelerator if not provided
     # It will automatically detect if running in distributed mode or single-process mode
     # We set step_scheduler_with_optimizer=False to prevent accelerate from adjusting the lr_scheduler steps based on the num_processes
@@ -262,8 +252,6 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
     if cfg.resume:
         step, optimizer, lr_scheduler = load_training_state(cfg.checkpoint_path, optimizer, lr_scheduler)
 
-    logging.info(policy)
-
     num_learnable_params = sum(p.numel() for p in policy.parameters() if p.requires_grad)
     num_total_params = sum(p.numel() for p in policy.parameters())
 
@@ -271,6 +259,8 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         logging.info(colored("Output dir:", "yellow", attrs=["bold"]) + f" {cfg.output_dir}")
         if cfg.env is not None:
             logging.info(f"{cfg.env.task=}")
+            logging.info("Creating environment processors")
+            env_preprocessor, env_postprocessor = make_env_pre_post_processors(env_cfg=cfg.env)
         logging.info(f"{cfg.steps=} ({format_big_number(cfg.steps)})")
         logging.info(f"{dataset.num_frames=} ({format_big_number(dataset.num_frames)})")
         logging.info(f"{dataset.num_episodes=}")
@@ -286,6 +276,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         sampler = EpisodeAwareSampler(
             dataset.meta.episodes["dataset_from_index"],
             dataset.meta.episodes["dataset_to_index"],
+            episode_indices_to_use=dataset.episodes,
             drop_n_last_frames=cfg.policy.drop_n_last_frames,
             shuffle=True,
         )
@@ -396,6 +387,8 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
                     eval_info = eval_policy_all(
                         envs=eval_env,  # dict[suite][task_id] -> vec_env
                         policy=accelerator.unwrap_model(policy),
+                        env_preprocessor=env_preprocessor,
+                        env_postprocessor=env_postprocessor,
                         preprocessor=preprocessor,
                         postprocessor=postprocessor,
                         n_episodes=cfg.eval.n_episodes,

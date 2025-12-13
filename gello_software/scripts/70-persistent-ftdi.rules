@@ -1,0 +1,6 @@
+# udev rules for persistent FTDI serial device naming
+# Left arm FTDI device (FTAO9WPU)
+SUBSYSTEM=="tty", ATTRS{serial}=="FTAO9WPU", SYMLINK+="serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAO9WPU-if00-port0"
+
+# Right arm FTDI device (FTAO9WCV)
+SUBSYSTEM=="tty", ATTRS{serial}=="FTAO9WCV", SYMLINK+="serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAO9WCV-if00-port0"

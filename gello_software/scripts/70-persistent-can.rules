@@ -1,0 +1,6 @@
+# udev rules for persistent CAN device naming
+# Right arm CAN device
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="gs_usb", ATTRS{serial}=="0056002F594E501820313332", NAME="can_right"
+
+# Left arm CAN device
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="gs_usb", ATTRS{serial}=="00220036594E501820313332", NAME="can_left"

@@ -1,0 +1,5 @@
+[Match]
+Path=pci-0000:00:14.0-usb-0:4:1.0
+
+[Link]
+Name=can_left

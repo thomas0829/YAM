@@ -177,7 +177,3 @@ outputs/
 *.urdf
 *.xml
 *.part
-
-# Others
-scripts.sh
-/beaker

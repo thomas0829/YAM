@@ -107,7 +107,6 @@ class DiffusionConfig(PreTrainedConfig):
     n_obs_steps: int = 2
     horizon: int = 16
     n_action_steps: int = 8
-    action_dof: int = 7
 
     normalization_mapping: dict[str, NormalizationMode] = field(
         default_factory=lambda: {
@@ -123,61 +122,19 @@ class DiffusionConfig(PreTrainedConfig):
 
     # Architecture / modeling.
     # Vision backbone.
-    image_encoder_model_name: str = 'ViT-B-32'
-    image_encoder_pretrained: str = 'openai'
-    image_feature_dim: int = 512
-    freeze_image_encoder: bool = True
-    normalize_image_features: bool = True
-    crop_ratio: float | None = 0.95
+    vision_backbone: str = "resnet18"
+    crop_shape: tuple[int, int] | None = (84, 84)
     crop_is_random: bool = True
-    image_feature_aggregation: str = "cls+patch"
-
-    # Original vision backbone
-    # vision_backbone: str = "resnet18"
-    # crop_shape: tuple[int, int] | None = (84, 84)
-    # crop_is_random: bool = True
     pretrained_backbone_weights: str | None = None
     use_group_norm: bool = True
     spatial_softmax_num_keypoints: int = 32
-
     use_separate_rgb_encoder_per_camera: bool = False
-
-    # Language backbone.
-    text_encoder_model_name: str = "ViT-B-32"   # CLIP text tower
-    text_encoder_pretrained: str = "openai"     # same style as pretrained_backbone_weights
-    text_feature_dim: int = 512                 # ViT-B/32 text feature dim
-    freeze_text_encoder: bool = True            # like using a fixed pretrained backbone
-    normalize_text_features: bool = True        # L2-norm CLIP features
-    text_feature_aggregation: str = "tokens"
-
-    # VAE
-    vae_ckpt_path: str = "/weka/oe-training-default/hqfang/Align-Then-Steer/Projects/ATE_vae/outputs/checkpoints/20251118_090751/Stage1/Last/Best.pth"
-    vae_in_channels: int = 32
-    vae_latent_size: int = 1
-    vae_latent_dim: int = 512
-    
-    # Patchifier
-    patch_size: int = 16
-
-    # Diffusion model.
-    training_objective: str = "flow_matching"
-    denoising_model_type: str = "mdt"
-    diffusion_step_embed_dim: int = 128
-    use_language: bool = True
-    use_vae: bool = False
-
     # Unet.
     down_dims: tuple[int, ...] = (512, 1024, 2048)
     kernel_size: int = 5
     n_groups: int = 8
+    diffusion_step_embed_dim: int = 128
     use_film_scale_modulation: bool = True
-
-    # DiT.
-    embed_dim: int = 768
-    num_heads: int = 8
-    depth: int = 12
-    mlp_ratio: float = 4.0
-
     # Noise scheduler.
     noise_scheduler_type: str = "DDPM"
     num_train_timesteps: int = 100
@@ -206,19 +163,9 @@ class DiffusionConfig(PreTrainedConfig):
         super().__post_init__()
 
         """Input validation (not exhaustive)."""
-        # if not self.vision_backbone.startswith("resnet"):
-        #     raise ValueError(
-        #         f"`vision_backbone` must be one of the ResNet variants. Got {self.vision_backbone}."
-        #     )
-        
-        if not self.image_encoder_model_name.lower().startswith("vit") and not self.image_encoder_model_name.lower().startswith("resnet"):
+        if not self.vision_backbone.startswith("resnet"):
             raise ValueError(
-                f"`image_encoder_model_name` must be one of the ViT or ResNet variants. Got {self.image_encoder_model_name}."
-            )
-        
-        if not self.text_encoder_model_name.lower().startswith("vit"):
-            raise ValueError(
-                f"`text_encoder_model_name` must be one of the ViT variants. Got {self.text_encoder_model_name}."
+                f"`vision_backbone` must be one of the ResNet variants. Got {self.vision_backbone}."
             )
 
         supported_prediction_types = ["epsilon", "sample"]
@@ -260,20 +207,14 @@ class DiffusionConfig(PreTrainedConfig):
         if len(self.image_features) == 0 and self.env_state_feature is None:
             raise ValueError("You must provide at least one image or the environment state among the inputs.")
 
-        # if self.crop_shape is not None:
-        #     for key, image_ft in self.image_features.items():
-        #         if self.crop_shape[0] > image_ft.shape[1] or self.crop_shape[1] > image_ft.shape[2]:
-        #             raise ValueError(
-        #                 f"`crop_shape` should fit within the images shapes. Got {self.crop_shape} "
-        #                 f"for `crop_shape` and {image_ft.shape} for "
-        #                 f"`{key}`."
-        #             )
-
-        if self.crop_ratio is not None:
-            if self.crop_ratio < 0.0 or self.crop_ratio > 1.0:
-                raise ValueError(
-                    f"`crop_ratio` should fit within 0.0 and 1.0. Got {self.crop_ratio}."
-                )
+        if self.crop_shape is not None:
+            for key, image_ft in self.image_features.items():
+                if self.crop_shape[0] > image_ft.shape[1] or self.crop_shape[1] > image_ft.shape[2]:
+                    raise ValueError(
+                        f"`crop_shape` should fit within the images shapes. Got {self.crop_shape} "
+                        f"for `crop_shape` and {image_ft.shape} for "
+                        f"`{key}`."
+                    )
 
         # Check that all input images have the same shape.
         if len(self.image_features) > 0:

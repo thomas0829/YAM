@@ -255,11 +255,5 @@ class PreTrainedPolicy(nn.Module, HubMixin, abc.ABC):
             files("lerobot.templates").joinpath("lerobot_modelcard_template.md").read_text(encoding="utf-8")
         )
         card = ModelCard.from_template(card_data, template_str=template_card)
-
-        # AFTER the card is created, BEFORE card.validate()
-        if "datasets" in card.data:
-            # If your dataset is local and not on HF, just drop the tag
-            card.data.pop("datasets")
-
         card.validate()
         return card

@@ -26,22 +26,6 @@ from lerobot.configs.train import TrainPipelineConfig
 from lerobot.utils.constants import PRETRAINED_MODEL_DIR
 
 
-import hashlib
-
-MAX_TAG_LEN = 64
-
-def _sanitize_tag(tag: str, max_len: int = MAX_TAG_LEN) -> str:
-    # W&B tags can't contain spaces and must be <= 64 chars
-    tag = str(tag).replace(" ", "_")
-    if len(tag) <= max_len:
-        return tag
-
-    # Add a short hash to keep uniqueness, and truncate
-    h = hashlib.sha1(tag.encode()).hexdigest()[:8]
-    base = tag[: max_len - 9]  # leave room for '_' + 8-char hash
-    return f"{base}_{h}"
-
-
 def cfg_to_group(cfg: TrainPipelineConfig, return_list: bool = False) -> list[str] | str:
     """Return a group name for logging. Optionally returns group name as list."""
     lst = [
@@ -93,35 +77,13 @@ class WandBLogger:
             if cfg.resume
             else None
         )
-
-
-        tags = []
-
-        # policy tag
-        if getattr(cfg, "policy", None) and getattr(cfg.policy, "type", None):
-            tags.append(_sanitize_tag(f"policy:{cfg.policy.type}"))
-
-        # dataset tag – use basename instead of full path, then sanitize
-        if getattr(cfg, "dataset", None) and getattr(cfg.dataset, "repo_id", None):
-            ds_id = cfg.dataset.repo_id
-            # try to keep just the last component of the path
-            ds_short = os.path.basename(ds_id.rstrip("/"))
-            tags.append(_sanitize_tag(f"dataset:{ds_short}"))
-
-        # seed tag
-        seed = getattr(cfg, "seed", None) or getattr(getattr(cfg, "train", None), "seed", None)
-        if seed is not None:
-            tags.append(_sanitize_tag(f"seed:{seed}"))
-
-
         wandb.init(
             id=wandb_run_id,
             project=self.cfg.project,
             entity=self.cfg.entity,
             name=self.job_name,
             notes=self.cfg.notes,
-            tags=tags,
-            # tags=cfg_to_group(cfg, return_list=True),
+            tags=cfg_to_group(cfg, return_list=True),
             dir=self.log_dir,
             config=cfg.to_dict(),
             # TODO(rcadene): try set to True
