@@ -1,0 +1,128 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.installed.cfg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+*.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# Machine Learning
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+models/
+checkpoints/
+wandb/
+mlruns/
+*.log
+logs/
+
+# Datasets
+data/
+datasets/
+*.hdf5
+*.h5
+*.mp4
+*.avi
+*.mkv
+
+# ROS
+build/
+devel/
+install/
+.catkin_workspace
+
+# Hardware specific
+*.bag
+*.mcap
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+
+# Configuration files (may contain secrets)
+.env
+.env.local
+secrets.yaml
+config.local.yaml
+
+# System
+.DS_Store
+Thumbs.db
+*.swp
+
+# Documentation
+docs/_build/
+site/
+
+# Compiled files
+*.o
+*.a
+*.lib
+
+# Third party
+third_party/**/build/
+third_party/**/*.egg-info/
+
+# Specific to YAM project
+gello_software/data/
+gello_software/logs/
+gello_software/recordings/
+src/lerobot/data/
+src/lerobot/outputs/
+*.cache

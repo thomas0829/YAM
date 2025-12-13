@@ -1,0 +1,218 @@
+[build-system]
+requires = ["setuptools >= 65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yam"
+version = "0.1.0"
+description = "YAM: Bimanual Robot System with LeRobot Integration for Data Collection, Training, and Inference"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Thomas", email = "ycl0829@uw.edu"}
+]
+
+dependencies = [
+    # Core dependencies
+    "numpy>=1.26.4",
+    "torch>=2.2.1,<2.8.0",
+    "pillow",
+    "omegaconf>=2.3.0",
+    "tyro",
+    "pyyaml",
+    "termcolor",
+    
+    # LeRobot dependencies for training/inference
+    "transformers>=4.36.0",
+    "diffusers>=0.25.0",
+    "accelerate>=0.25.0",
+    "datasets>=2.16.0",
+    "huggingface-hub>=0.20.0",
+    "safetensors>=0.4.0",
+    "tensorboard",
+    "wandb",
+    "einops",
+    "h5py",
+    "imageio[ffmpeg]",
+    "opencv-python",
+    "gym>=0.26.0",
+    
+    # Gello/Robot control
+    "dm_control",
+    "pyrealsense2",
+    "pyzmq",
+    "zmq",
+    "pygame",
+    "pyquaternion",
+    "quaternion",
+    "numpy-quaternion",
+    "PyQt6",
+    "setuptools",
+    
+    # Hardware interfaces
+    "pyspacemouse",
+    "pure-python-adb",
+    "ur-rtde",
+    
+    # Robot arms
+    "xarm",
+    "xarm-python-sdk",
+    
+    # YAM Realtime dependencies
+    "viser",
+    "portal",
+    "dm-env==1.6",
+    "dotdict==0.1",
+    "robot_descriptions",
+    "pyroki @ git+https://github.com/chungmin99/pyroki.git",
+    
+    # Training dependencies
+    "torchvision>=0.21.0,<0.23.0",
+    "torchaudio",
+    "torch-optimizer",
+    "mujoco==3.3.5",
+    
+    # Development tools
+    "pytest>=7.0.0",
+    "pytest-cov",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pre-commit",
+]
+
+[project.optional-dependencies]
+# All dependencies are included by default
+# Optional groups kept for backwards compatibility
+dev = []
+training = []
+all = []
+
+[project.urls]
+Repository = "https://github.com/thomas0829/YAM"
+Homepage = "https://github.com/thomas0829/YAM"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "src*",
+    "gello_software*",
+    "yam_realtime*",
+    "oculus_reader*",
+]
+exclude = [
+    "tests*",
+    "*.egg-info*",
+]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.yml", "*.json", "*.xml"]
+
+# Ruff configuration for linting
+[tool.ruff]
+line-length = 119
+target-version = "py310"
+
+lint.select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # Pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+]
+
+lint.ignore = [
+    "E501",   # line too long (handled by black)
+    "B008",   # do not perform function calls in argument defaults
+    "C901",   # too complex
+    "W191",   # indentation contains tabs
+    "B904",   # Allow raising exceptions without from e
+]
+
+exclude = [
+    ".git",
+    "__pycache__",
+    "*.egg-info",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+    ".pytest_cache",
+    "third_party",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Allow unused imports in __init__.py
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+# Black configuration
+[tool.black]
+line-length = 119
+target-version = ['py310']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | \.pytest_cache
+  | __pycache__
+  | build
+  | dist
+  | third_party
+)/
+'''
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = [
+    "third_party/",
+    "build/",
+    ".venv/",
+]
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = [
+    "--strict-markers",
+    "--disable-warnings",
+    "-v",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "requires_hardware: marks tests that require hardware",
+]
+
+[tool.coverage.run]
+source = ["src", "gello_software", "yam_realtime", "oculus_reader"]
+omit = [
+    "*/tests/*",
+    "*/third_party/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
