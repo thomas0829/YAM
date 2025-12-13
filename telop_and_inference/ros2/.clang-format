@@ -1,4 +1,0 @@
-BasedOnStyle: Chromium
-Standard: c++20
-SortIncludes: true
-ColumnLimit: 100

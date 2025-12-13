@@ -1,3 +1,0 @@
-dynamixel_sdk
-PyYAML
-tyro

@@ -49,6 +49,7 @@ dependencies = [
     "numpy-quaternion",
     "PyQt6",
     "setuptools",
+    "dynamixel-sdk @ file:///home/prior/thomas/YAM/teleop_and_inference/third_party/DynamixelSDK/python",
     
     # Hardware interfaces
     "pyspacemouse",
@@ -94,10 +95,11 @@ Repository = "https://github.com/thomas0829/YAM"
 Homepage = "https://github.com/thomas0829/YAM"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src", "teleop_and_inference", "."]
 include = [
-    "src*",
-    "gello_software*",
+    "lerobot*",
+    "i2rt*",
+    "gello*",
     "yam_realtime*",
     "oculus_reader*",
 ]
@@ -199,7 +201,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src", "gello_software", "yam_realtime", "oculus_reader"]
+source = ["src", "teleop_and_inference", "yam_realtime", "oculus_reader"]
 omit = [
     "*/tests/*",
     "*/third_party/*",

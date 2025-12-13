@@ -1,3 +1,0 @@
-[submodule "dependencies/i2rt"]
-	path = dependencies/i2rt
-	url = https://github.com/i2rt-robotics/i2rt.git
