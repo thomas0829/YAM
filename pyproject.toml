@@ -49,7 +49,7 @@ dependencies = [
     "numpy-quaternion",
     "PyQt6",
     "setuptools",
-    "dynamixel-sdk @ file:///home/prior/thomas/YAM/teleop_and_inference/third_party/DynamixelSDK/python",
+    "dynamixel-sdk @ file:./teleop_and_inference/third_party/DynamixelSDK/python",
     
     # Hardware interfaces
     "pyspacemouse",
