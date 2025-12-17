@@ -1,0 +1,8 @@
+# udev rules for persistent CAN device naming
+# Place this file in /etc/udev/rules.d/
+
+# CAN Right - Serial: 003D0065594E501820313332
+SUBSYSTEM=="net", ACTION=="add", ATTRS{serial}=="003D0065594E501820313332", NAME="can_right"
+
+# CAN Left - Serial: 00630059594E501820313332
+SUBSYSTEM=="net", ACTION=="add", ATTRS{serial}=="00630059594E501820313332", NAME="can_left"

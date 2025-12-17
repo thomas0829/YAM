@@ -1,0 +1,59 @@
+_target_: yam_realtime.scripts.collect_data.LaunchConfig
+
+# Safety configuration (separate from LaunchConfig)
+safety:
+  enable_safety: true
+  max_joint_delta: 0.15  # Maximum joint change per step (radians, ~8.6 degrees)
+  max_velocity: 1.5  # Maximum joint velocity (rad/s)
+  max_gripper_delta: 0.8  # Maximum gripper change per step
+  dt: 0.1  # Time step in seconds
+  max_violations: 100  # Maximum violations before critical stop
+  clamp_actions: true  # IMPORTANT: Enable clamping to prevent dangerous movements
+  warmup_steps: 5  # Shorter warmup since we're clamping dangerous actions
+
+sensors:
+  cameras:
+    wrist_camera:
+        _target_: yam_realtime.sensors.cameras.camera.CameraNode
+        camera:
+            _target_: yam_realtime.sensors.cameras.opencv_camera.OpencvCamera
+            device_path: "/dev/video2"
+            camera_type: "realsense_camera"
+            resolution: !!python/tuple [1280, 720]
+            fps: 30
+
+robots:
+  left: ["robot_configs/yam/left.yaml"]
+  # right: ["robot_configs/yam/left.yaml", "robot_configs/yam/right.yaml"]
+
+agent:
+  _target_: yam_realtime.agents.teleoperation.oculus_record.OculusRecordAgent
+  bimanual: false
+  # right_arm_extrinsic:
+  #     position: [0.0, -0.61, 0.0]
+  #     rotation: [1.0, 0.0, 0.0, 0.0]
+
+station_metadata:
+  world_frame: "left_arm" # front x, left y, up z
+  # extrinsics:
+  #   right_arm_extrinsic:
+  #     position: [0.0, -0.61, 0.0]
+  #     rotation: [1.0, 0.0, 0.0, 0.0]
+
+# Data collection configuration
+collection:
+  max_episode_length: 10000
+  act_noise_std: 0.001
+  no_ops_threshold: 0.004
+  no_ops_last_detected_time: 3
+  lock_rotation_detected_time: 1
+
+# Data storage configuration
+storage:
+  episodes: 5
+  base_dir: "yam_realtime/yam_video"
+  task_directory: "remove_cube_plate"  # This will be the folder name under yam_video/
+  language_instruction: "Test."  # Detailed instruction for the task
+  teleop_device: "oculus" # ["oculus", "keyboard", "gello", "none"]
+  save_format: "json" # ["json", "npy"]
+  old_format: false
