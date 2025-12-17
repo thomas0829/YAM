@@ -1,0 +1,9 @@
+{
+  "timestamp": "20251123_154736",
+  "language_instruction": "Put the cookie package into the box.",
+  "num_frames": 492,
+  "video_files": [
+    "wrist.mp4"
+  ],
+  "action_file": "actions.json"
+}

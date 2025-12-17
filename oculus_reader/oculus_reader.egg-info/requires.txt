@@ -1,0 +1,2 @@
+numpy
+pure-python-adb

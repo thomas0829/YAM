@@ -1,0 +1,9 @@
+{
+  "timestamp": "20251123_155445",
+  "language_instruction": "Put the banana into the box.",
+  "num_frames": 548,
+  "video_files": [
+    "wrist.mp4"
+  ],
+  "action_file": "actions.json"
+}

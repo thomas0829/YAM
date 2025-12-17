@@ -1,0 +1,9 @@
+{
+  "timestamp": "20251123_164655",
+  "language_instruction": "Remove the cube from the plate.",
+  "num_frames": 534,
+  "video_files": [
+    "wrist.mp4"
+  ],
+  "action_file": "actions.json"
+}

@@ -1,0 +1,9 @@
+{
+  "timestamp": "20251123_162109",
+  "language_instruction": "Stack the cubes.",
+  "num_frames": 552,
+  "video_files": [
+    "wrist.mp4"
+  ],
+  "action_file": "actions.json"
+}

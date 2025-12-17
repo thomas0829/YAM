@@ -1,0 +1,9 @@
+{
+  "timestamp": "20251123_161436",
+  "language_instruction": "Put the cube into the bowl.",
+  "num_frames": 521,
+  "video_files": [
+    "wrist.mp4"
+  ],
+  "action_file": "actions.json"
+}
