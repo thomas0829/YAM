@@ -371,6 +371,7 @@ class DMChainCanInterface(MotorChain):
         self.motor_offset = np.array(motor_offset)
         self.motor_direction = np.array(motor_direction)
         self.channel = channel
+        self.motor_chain_name = motor_chain_name
         logging.info(f"Channel: {channel}, Bitrate: {bitrate}")
         if "can" in channel:
             self.motor_interface = DMSingleMotorCanInterface(
@@ -400,6 +401,7 @@ class DMChainCanInterface(MotorChain):
             self.same_bus_device_driver = None
 
         self.absolute_positions = None
+        self.control_thread = None
         self._motor_on()
         starting_command = []
         for motor_state in self.state:
@@ -474,8 +476,8 @@ class DMChainCanInterface(MotorChain):
     def start_thread(self) -> None:
         # clean error again for motor with timeout enabled
         self._motor_on()
-        thread = threading.Thread(target=self._set_torques_and_update_state)
-        thread.start()
+        self.control_thread = threading.Thread(target=self._set_torques_and_update_state)
+        self.control_thread.start()
         time.sleep(0.1)
         while self.state is None:
             time.sleep(0.1)
@@ -618,7 +620,21 @@ class DMChainCanInterface(MotorChain):
             return self.same_bus_device_states
 
     def close(self) -> None:
+        logging.info(f"Closing DMChainCanInterface {self.motor_chain_name}...")
         self.running = False
+        # Wait for control thread to stop
+        if self.control_thread is not None and self.control_thread.is_alive():
+            self.control_thread.join(timeout=1.0)
+            if self.control_thread.is_alive():
+                logging.warning(f"Control thread for {self.motor_chain_name} did not stop in time")
+        # Turn off all motors
+        for motor_id, motor_type in self.motor_list:
+            try:
+                self.motor_interface.motor_off(motor_id)
+                time.sleep(0.05)
+            except Exception as e:
+                logging.warning(f"Failed to turn off motor {motor_id}: {e}")
+        logging.info(f"DMChainCanInterface {self.motor_chain_name} closed")
 
 
 class MultiDMChainCanInterface(MotorChain):

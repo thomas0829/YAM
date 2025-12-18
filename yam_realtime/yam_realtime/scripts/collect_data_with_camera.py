@@ -115,6 +115,24 @@ def main(args: Args):
             env.close()
         if "agent" in locals():
             cleanup_processes(agent, server_processes)
+        
+        # Shutdown all motors
+        try:
+            from i2rt.motor_drivers.dm_driver import DMSingleMotorCanInterface
+            import time
+            for channel in ['can_left', 'can_right']:
+                try:
+                    can = DMSingleMotorCanInterface(channel=channel, bustype='socketcan', bitrate=1000000)
+                    for motor_id in [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]:
+                        try:
+                            can.motor_off(motor_id)
+                            time.sleep(0.05)
+                        except:
+                            pass
+                except:
+                    pass
+        except:
+            pass
 
 
 # slowly move the robot back to original position

@@ -6,7 +6,7 @@ sensors:
         _target_: yam_realtime.sensors.cameras.camera.CameraNode
         camera:
             _target_: yam_realtime.sensors.cameras.opencv_camera.OpencvCamera
-            device_path: "/dev/video5"
+            device_path: "/dev/video4"
             camera_type: "realsense_camera"
 
 robots:

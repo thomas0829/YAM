@@ -36,4 +36,4 @@ storage:
 policy:
   # _target_: lerobot.common.policies.pi05.configuration_pi05.PI05Config
   repo_id: "Jiafei1224/d"
-  checkpoint_path: "Jiafei1224/pi05-fold-clothes"
+  checkpoint_path: "Jiafei1224/a"

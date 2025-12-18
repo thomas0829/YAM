@@ -1,5 +1,6 @@
 [Match]
-Path=pci-0000:00:14.0-usb-0:4:1.0
+Driver=gs_usb
+Property=ID_SERIAL_SHORT=00630059594E501820313332
 
 [Link]
 Name=can_left
