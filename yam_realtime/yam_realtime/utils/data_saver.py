@@ -43,9 +43,13 @@ class DataSaver:
         obs['action'] = {'left': action['left']['pos'], 'right': action['right']['pos']}
         obs['instruction'] = self.instruction
         obs['delta'] = {'left': np.concatenate([action['left']['delta'], [action['left']['pos'][-1]]]), 'right': np.concatenate([action['right']['delta'], [action['right']['pos'][-1]]])}
-        obs['left_rgb'] = obs['left_camera']['images']['rgb']
-        obs['right_rgb'] = obs['right_camera']['images']['rgb']
-        obs['front_rgb'] = obs['front_camera']['images']['rgb']
+        
+        # Dynamically add camera data based on what's available in obs
+        for key in list(obs.keys()):  # Convert to list to avoid RuntimeError
+            if key.endswith('_camera') and isinstance(obs[key], dict) and 'images' in obs[key]:
+                camera_name = key.replace('_camera', '_rgb')
+                obs[camera_name] = obs[key]['images']['rgb']
+        
         obs['joint'] = {'left': np.concatenate([obs['left']['joint_pos'], obs['left']['gripper_pos']]), 'right': np.concatenate([obs['right']['joint_pos'], obs['right']['gripper_pos']])}
         self.buffer.append(obs.copy())
 

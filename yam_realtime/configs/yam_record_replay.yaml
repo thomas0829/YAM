@@ -6,19 +6,7 @@ sensors:
         _target_: yam_realtime.sensors.cameras.camera.CameraNode
         camera:
             _target_: yam_realtime.sensors.cameras.opencv_camera.OpencvCamera
-            device_path: "/dev/video3"
-            camera_type: "realsense_camera"
-    right_camera:
-        _target_: yam_realtime.sensors.cameras.camera.CameraNode
-        camera:
-            _target_: yam_realtime.sensors.cameras.opencv_camera.OpencvCamera
-            device_path: "/dev/video9"
-            camera_type: "realsense_camera"
-    front_camera:
-        _target_: yam_realtime.sensors.cameras.camera.CameraNode
-        camera:
-            _target_: yam_realtime.sensors.cameras.opencv_camera.OpencvCamera
-            device_path: "/dev/video17"
+            device_path: "/dev/video5"
             camera_type: "realsense_camera"
 
 robots:
@@ -50,7 +38,7 @@ collection:
 # Data storage configuration
 storage:
   episodes: 30
-  base_dir: "/home/sean/Desktop/YAM/yam_realtime/yam_realtime/scripts/delta_trajectory"
+  base_dir: "./delta_trajectory"
   task_directory: "testing"
   language_instruction: "testing"
   teleop_device: "oculus" # ["oculus", "keyboard", "gello", "none"]

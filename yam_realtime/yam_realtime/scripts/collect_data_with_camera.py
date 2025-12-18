@@ -3,8 +3,13 @@ import os
 import sys
 from tkinter import Y
 
-sys.path.append('/home/sean/Desktop/YAM')
-sys.path.append('/home/sean/Desktop/YAM/yam_realtime')
+# Add paths relative to script location
+script_dir = os.path.dirname(os.path.abspath(__file__))
+yam_root = os.path.abspath(os.path.join(script_dir, '..', '..', '..'))
+yam_realtime_root = os.path.abspath(os.path.join(script_dir, '..', '..'))
+sys.path.append(yam_root)
+sys.path.append(yam_realtime_root)
+
 import numpy as np
 from scipy.spatial.transform import Slerp, Rotation as R
 
@@ -48,12 +53,18 @@ class LaunchConfig:
 
 @dataclass
 class Args:
-    config_path: Tuple[str, ...] = ("~/yam_realtime/configs/yam_record_replay.yaml",)
+    config_path: Tuple[str, ...] = ("~/thomas/YAM/yam_realtime/configs/yam_record_replay.yaml",)
     
 
 def main(args: Args):
+    # Change to yam_realtime directory for relative paths to work
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    yam_realtime_dir = os.path.abspath(os.path.join(script_dir, '..', '..'))
+    os.chdir(yam_realtime_dir)
+    
     logger = setup_logging()
     logger.info("Starting YAM realtime control system...")
+    logger.info(f"Working directory: {os.getcwd()}")
 
     server_processes = []
     try:
@@ -67,7 +78,7 @@ def main(args: Args):
         logger.info("Initializing sensors...")
         camera_dict, camera_info = initialize_sensors(sensors_cfg, server_processes)
 
-        setup_can_interfaces()
+        # setup_can_interfaces()
 
         logger.info("Initializing robots...")
         robots = initialize_robots(main_config.robots, server_processes)
