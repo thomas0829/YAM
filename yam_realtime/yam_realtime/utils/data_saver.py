@@ -7,6 +7,11 @@ import shutil
 import time
 from PIL import Image
 import numpy as np
+import warnings
+
+# Suppress numpy warnings for empty slices
+warnings.filterwarnings('ignore', category=RuntimeWarning, message='Mean of empty slice')
+warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered')
 
 logger = logging.getLogger("data_saver")
 logger.setLevel(logging.INFO)

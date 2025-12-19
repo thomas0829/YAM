@@ -75,9 +75,10 @@ class Rate:
         if self.rate is None:
             return
         if self.last + self.dt < time.time() - 0.001:
-            logging.warning(
-                f"Already behind schedule {self.rate_name} by {time.time() - (self.last + self.dt)} seconds"
-            )
+            # logging.warning(
+            #     f"Already behind schedule {self.rate_name} by {time.time() - (self.last + self.dt)} seconds"
+            # )
+            pass  # Warning disabled - minor delays are acceptable
         else:
             needed_sleep = max(0, self.last + self.dt - time.time() - 0.0001)  # 0.0001 is the time it takes to sleep
             time.sleep(needed_sleep)

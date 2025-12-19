@@ -1,7 +1,80 @@
+#!/usr/bin/env python3
 # Collect data for a single task. Pair with oculus viser agent.
-import os
+
+# CRITICAL: Redirect stderr at OS level to filter OpenSSL warnings
 import sys
+import os
+import io
+
+# Set environment variable to disable RDRAND
+os.environ['OPENSSL_ia32cap'] = '~0x200000200000000'
+
+# Create a filtering wrapper for stderr at the file descriptor level
+class StderrFilter:
+    def __init__(self, fd):
+        self.fd = fd
+        self.buffer = b''
+        
+    def write(self, data):
+        if isinstance(data, str):
+            data = data.encode('utf-8')
+        # Filter out OpenSSL warnings
+        lines = data.split(b'\n')
+        filtered_lines = []
+        for line in lines:
+            if b'CPU random generator' not in line and b'RDRND generated' not in line:
+                filtered_lines.append(line)
+        if filtered_lines:
+            filtered_data = b'\n'.join(filtered_lines)
+            os.write(self.fd, filtered_data)
+        return len(data)
+    
+    def fileno(self):
+        return self.fd
+
+# Redirect stderr file descriptor through our filter
+original_stderr_fd = sys.stderr.fileno()
+pipe_read, pipe_write = os.pipe()
+
+# Fork a thread to filter stderr
+import threading
+def filter_stderr():
+    while True:
+        try:
+            data = os.read(pipe_read, 4096)
+            if not data:
+                break
+            # Filter the data
+            if b'CPU random generator' not in data and b'RDRND generated' not in data:
+                os.write(original_stderr_fd, data)
+        except:
+            break
+
+# Save original stderr and redirect to pipe
+saved_stderr = os.dup(2)
+os.dup2(pipe_write, 2)
+os.close(pipe_write)
+
+# Start filtering thread
+filter_thread = threading.Thread(target=filter_stderr, daemon=True)
+filter_thread.start()
+
+import warnings
 from tkinter import Y
+
+# Suppress warnings
+warnings.filterwarnings('ignore')
+
+# Monkey-patch socket to suppress "Bad file descriptor" errors during cleanup
+import socket
+_original_socket_close = socket.socket._real_close
+def _patched_socket_close(self):
+    try:
+        _original_socket_close(self)
+    except OSError as e:
+        if e.errno not in [9, 88]:  # Suppress "Bad file descriptor" and "Socket operation on non-socket"
+            raise
+socket.socket._real_close = _patched_socket_close
 
 # Add paths relative to script location
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -25,6 +98,7 @@ from yam_realtime.robots.inverse_kinematics.yam_pyroki import YamPyroki
 from yam_realtime.agents.teleoperation.oculus_viser_agent import OculusViserAgent
 from yam_realtime.envs.robot_env import RobotEnv
 from yam_realtime.utils.data_saver import DataSaver
+from yam_realtime.utils.lerobot_data_saver import LeRobotDataSaver
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple, Union
@@ -57,6 +131,43 @@ class Args:
     
 
 def main(args: Args):
+    # Monkey-patch CAN bus to suppress cleanup errors (must be done after imports)
+    try:
+        import can.bus
+        import can.notifier
+        import can.interfaces.socketcan.socketcan
+        import can.exceptions
+        import logging as can_logging
+        
+        # Save reference to exception class
+        CanOperationError = can.exceptions.CanOperationError
+        
+        # Suppress BusABC.__del__ warnings
+        _original_bus_del = can.bus.BusABC.__del__
+        def _patched_bus_del(self):
+            try:
+                logger = can_logging.getLogger('can.bus')
+                old_level = logger.level
+                logger.setLevel(can_logging.ERROR)
+                try:
+                    _original_bus_del(self)
+                finally:
+                    logger.setLevel(old_level)
+            except (OSError, Exception):
+                pass
+        can.bus.BusABC.__del__ = _patched_bus_del
+        
+        # Suppress SocketcanBus._recv_internal errors during shutdown
+        _original_recv_internal = can.interfaces.socketcan.socketcan.SocketcanBus._recv_internal
+        def _patched_recv_internal(self, timeout=None):
+            try:
+                return _original_recv_internal(self, timeout)
+            except (OSError, CanOperationError):
+                return None, False  # Return empty result on socket errors
+        can.interfaces.socketcan.socketcan.SocketcanBus._recv_internal = _patched_recv_internal
+    except ImportError:
+        pass  # CAN not available
+    
     # Change to yam_realtime directory for relative paths to work
     script_dir = os.path.dirname(os.path.abspath(__file__))
     yam_realtime_dir = os.path.abspath(os.path.join(script_dir, '..', '..'))
@@ -101,38 +212,181 @@ def main(args: Args):
         
 
         logger.info("Starting control loop...")
-        data_saver = DataSaver(task_directory=configs_dict['storage']['task_directory'], language_instruction=configs_dict['storage']['language_instruction'])
+        # Get storage configuration
+        storage_cfg = configs_dict['storage']
+        task_name = storage_cfg.get('task_name', 'default_task')
+        task_directory = task_name.lower().replace(' ', '_').replace('.', '').replace(',', '')
+        save_dir = storage_cfg.get('save_dir', './data')
+        data_format = storage_cfg.get('format', 'json')
+        
+        # Convert save_dir to absolute path based on config file location
+        from pathlib import Path
+        config_dir = Path(main_config.config_path).parent if hasattr(main_config, 'config_path') else Path.cwd()
+        save_dir_abs = (config_dir / save_dir).resolve() if not Path(save_dir).is_absolute() else Path(save_dir).resolve()
+        
+        # Initialize data saver based on format
+        if data_format == 'lerobot':
+            camera_names = list(camera_dict.keys()) if camera_dict else []
+            repo_id = task_directory  # Just "pick_up_the_cloth"
+            
+            # Dataset path: data/lerobot/pick_up_the_cloth
+            lerobot_root = save_dir_abs / 'lerobot'
+            dataset_path = lerobot_root / repo_id
+            
+            if dataset_path.exists():
+                # Temporarily restore stderr for clean user input
+                sys.stderr.flush()
+                sys.stdout.flush()
+                os.dup2(saved_stderr, 2)
+                
+                # Clear screen and show prominent message
+                print("\n" + "="*80)
+                print("WARNING: Dataset directory already exists!")
+                print("="*80)
+                print(f"Path: {dataset_path}")
+                print("\n" + "="*80)
+                print("Choose an option:")
+                print("="*80)
+                print("  [d] Delete existing directory")
+                print("  [r] Rename existing directory (add timestamp)")
+                print("  [q] Exit program")
+                print("="*80)
+                
+                try:
+                    choice = input("\nYour choice [d/r/q]: ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    choice = 'q'
+                
+                print("="*80 + "\n")
+                
+                if choice == 'd':
+                    import shutil
+                    print(f"Deleting {dataset_path}...")
+                    shutil.rmtree(dataset_path)
+                    print("✓ Directory deleted\n")
+                elif choice == 'r':
+                    import datetime
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    new_path = Path(str(dataset_path) + f"_backup_{timestamp}")
+                    print(f"Renaming {dataset_path} → {new_path.name}...")
+                    dataset_path.rename(new_path)
+                    print("✓ Directory renamed\n")
+                else:
+                    print("Exiting...\n")
+                    sys.exit(0)
+                
+                # Re-enable stderr filtering after user input
+                sys.stderr.flush()
+                sys.stdout.flush()
+                # Note: We don't redirect stderr back to pipe because it might cause issues
+                # The filter thread is already running and will handle new output
+            
+            logger.info(f"Creating LeRobot dataset: {repo_id}")
+            data_saver = LeRobotDataSaver(
+                repo_id=repo_id,  # "pick_up_the_cloth" - used for HF repo name
+                root=str(dataset_path),  # Full path: "data/lerobot/pick_up_the_cloth"
+                fps=int(storage_cfg.get('fps', 10)),
+                task_name=task_name,
+                robot_type="yam",
+                camera_names=camera_names,
+                use_videos=True,
+                image_writer_processes=4,
+                image_writer_threads=len(camera_names) * 2 if camera_names else 4,
+                hf_user=storage_cfg.get('hf_user'),
+                auto_upload=storage_cfg.get('auto_upload', True),
+            )
+            
+            logger.info(f"Dataset initialized: '{task_name}' -> {dataset_path}")
+        else:
+            logger.info("Using legacy JSON format")
+            data_saver = DataSaver(
+                save_dir=os.path.join(save_dir, 'json'),
+                task_directory=task_directory, 
+                language_instruction=task_name
+            )
+        
         _run_control_loop(env, agent, main_config, configs_dict, data_saver)
+        # Normal completion - allow upload
+        should_upload = True
 
-
+    except KeyboardInterrupt:
+        logger.info("Received keyboard interrupt, shutting down gracefully...")
+        should_upload = False  # Don't upload incomplete data
     except Exception as e:
         logger.error(f"Error during execution: {e}")
+        should_upload = False  # Don't upload on error
         raise e
     finally:
-        # Cleanup
+        # Cleanup in correct order
         logger.info("Shutting down...")
-        if "env" in locals():
-            env.close()
-        if "agent" in locals():
-            cleanup_processes(agent, server_processes)
         
-        # Shutdown all motors
+        # 1. Stop agent first (stop sending commands)
+        if "agent" in locals():
+            try:
+                cleanup_processes(agent, server_processes)
+            except Exception as e:
+                logger.warning(f"Error cleaning up agent: {e}")
+        
+        # 2. Close environment (this closes cameras)
+        if "env" in locals():
+            try:
+                env.close()
+            except Exception as e:
+                logger.warning(f"Error closing environment: {e}")
+        
+        # 3. Manually disable motors (auto cleanup doesn't disable right arm)
+        logger.info("Manually disabling all motors...")
         try:
             from i2rt.motor_drivers.dm_driver import DMSingleMotorCanInterface
             import time
-            for channel in ['can_left', 'can_right']:
-                try:
-                    can = DMSingleMotorCanInterface(channel=channel, bustype='socketcan', bitrate=1000000)
-                    for motor_id in [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]:
-                        try:
-                            can.motor_off(motor_id)
-                            time.sleep(0.05)
-                        except:
-                            pass
-                except:
-                    pass
-        except:
-            pass
+            import logging as motor_logging
+            
+            # Temporarily disable CAN interface warnings during shutdown
+            can_logger = motor_logging.getLogger('root')
+            old_level = can_logger.level
+            can_logger.setLevel(motor_logging.ERROR)
+            
+            try:
+                for channel in ['can_left', 'can_right']:
+                    can = None
+                    try:
+                        can = DMSingleMotorCanInterface(channel=channel, bustype='socketcan', bitrate=1000000)
+                        for motor_id in [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]:
+                            try:
+                                can.motor_off(motor_id)
+                                time.sleep(0.02)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    finally:
+                        if can is not None:
+                            try:
+                                can.shutdown()
+                            except Exception:
+                                pass
+            finally:
+                can_logger.setLevel(old_level)
+        except Exception as e:
+            logger.warning(f"Error during motor shutdown: {e}")
+        
+        # 4. Finalize data saver (only upload if normal completion)
+        if "data_saver" in locals() and "should_upload" in locals():
+            try:
+                if hasattr(data_saver, 'finalize'):
+                    if should_upload:
+                        logger.info("Finalizing dataset and uploading to Hugging Face...")
+                        data_saver.finalize()
+                    else:
+                        logger.info("Skipping upload (interrupted/error), but saving metadata...")
+                        # Save metadata without uploading
+                        if hasattr(data_saver, '_save_metadata'):
+                            data_saver._save_metadata()
+            except Exception as e:
+                logger.warning(f"Error finalizing data saver: {e}")
+        
+        logger.info("Shutdown complete.")
+
 
 
 # slowly move the robot back to original position
@@ -173,18 +427,19 @@ def sum_delta_action(prev_delta, curr_delta):
     }
     return delta_sum
 
-def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs_dict: Dict, data_saver: DataSaver) -> None:
+def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs_dict: Dict, data_saver) -> None:
     """
     Run the main control loop.
-
-    Args:
-        env: Robot environment
-        agent: Agent instance
-        config: Configuration object
+    Supports both legacy JSON format (DataSaver) and LeRobot format (LeRobotDataSaver).
     """
-    previous_action = agent.act({})
-    saver_thread = EpisodeSaverThread(data_saver)
-    saver_thread.start()
+    # Check if using LeRobot format
+    is_lerobot = hasattr(data_saver, 'add_frame')
+    
+    if not is_lerobot:
+        # Legacy format - use threaded saver
+        previous_action = agent.act({})
+        saver_thread = EpisodeSaverThread(data_saver)
+        saver_thread.start()
 
     logger = logging.getLogger(__name__)
     num_traj = 1
@@ -193,16 +448,19 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
     obs = env.reset()
     logger.info(f"Action spec: {env.action_spec()}")
     last_save_time = time.time()
-    hz = 10
-    delta_cumulative = {
-        "left": {"delta" : np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])},
-        "right": {"delta" : np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])}
-    }
+    hz = configs_dict['storage'].get('fps', 10)
+    
+    if not is_lerobot:
+        delta_cumulative = {
+            "left": {"delta" : np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])},
+            "right": {"delta" : np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])}
+        }
 
     # Main control loop
     while num_traj <= configs_dict['storage']['episodes']:
         obs = env.reset()
-        data_saver.reset_buffer()
+        if not is_lerobot:
+            data_saver.reset_buffer()
         
 
         logger.info(f"Press 'A' to start collecting data: ")
@@ -218,6 +476,19 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
 
         for _ in tqdm.tqdm(range(configs_dict['collection']['max_episode_length']), desc=f"Collecting data {num_traj}/{configs_dict['storage']['episodes']}"):
             info = agent.get_info()
+            
+            # Check for manual motor disable (press 'X' button)
+            if info.get("manual_disable", False):
+                logger.warning("Manual motor disable triggered!")
+                # Disable all motors
+                try:
+                    env.robot('left').motor_off()
+                    env.robot('right').motor_off()
+                    logger.info("All motors disabled")
+                except Exception as e:
+                    logger.error(f"Error disabling motors: {e}")
+                break
+            
             while (not info["success"] and not info["failure"]) and not info["movement_enabled"]['left'] and not info["movement_enabled"]['right']:
                 info = agent.get_info()
             
@@ -243,12 +514,23 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
             if info["movement_enabled"]['left'] or info["movement_enabled"]['right']:
                 act = agent.act(obs)
                 action = {'left': {'pos':act['left']['pos']}, 'right': {'pos':act['right']['pos']}}
-                delta_cumulative = sum_delta_action(delta_cumulative, act)
+                
+                # Save data at specified frequency
                 if time.time() - last_save_time > (1/hz):
-                    act["left"]["delta"] = delta_cumulative["left"]["delta"]
-                    act["right"]["delta"] = delta_cumulative["right"]["delta"]
-                    data_saver.add_observation(obs, act)
-                    delta_cumulative = {
+                    if is_lerobot:
+                        # LeRobot format
+                        data_saver.add_frame(
+                            observation=obs,
+                            action=act,
+                            timestamp=time.time()
+                        )
+                    else:
+                        # Legacy JSON format
+                        delta_cumulative = sum_delta_action(delta_cumulative, act)
+                        act["left"]["delta"] = delta_cumulative["left"]["delta"]
+                        act["right"]["delta"] = delta_cumulative["right"]["delta"]
+                        data_saver.add_observation(obs, act)
+                        delta_cumulative = {
                             "left": {"delta" : np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])},
                             "right": {"delta" : np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])}
                         }
@@ -257,20 +539,31 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
                 obs = next_obs.copy()
         
         if save:
-            if data_saver.buffer == []:
-                logger.info(f"No data collected, skipping save")
-                continue
-            # data_saver.save_episode_json()
-            saver_thread.save_episode(data_saver.buffer.copy())
-            num_traj +=1
-            logger.info(f"Successfully collected data")
+            if is_lerobot:
+                # LeRobot format - save episode directly
+                if data_saver.episode_started:
+                    logger.info(f"Saving LeRobot episode {num_traj}...")
+                    data_saver.save_episode()
+                    num_traj += 1
+                    logger.info(f"Successfully collected data")
+                else:
+                    logger.info(f"No data collected, skipping save")
+            else:
+                # Legacy JSON format - use thread
+                if data_saver.buffer == []:
+                    logger.info(f"No data collected, skipping save")
+                    continue
+                saver_thread.save_episode(data_saver.buffer.copy())
+                num_traj += 1
+                logger.info(f"Successfully collected data")
         else:
             logger.info(f"Failure")
         reset_robot(agent, env, 'left')
         reset_robot(agent, env, 'right')
 
-    saver_thread.stop()
-    saver_thread.join()
+    if not is_lerobot:
+        saver_thread.stop()
+        saver_thread.join()
 
     env.reset()
     logger.info(f"Finished collecting data")

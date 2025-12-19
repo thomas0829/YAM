@@ -68,9 +68,15 @@ def quat_diff(quat1, quat2):
     return  quat_diff.as_quat()
 
 class OculusRecordAgent(Agent):
-    def __init__(self, bimanual: bool = False, right_arm_extrinsic: Optional[Dict[str, Any]] = None):
+    def __init__(self, bimanual: bool = False, right_arm_extrinsic: Optional[Dict[str, Any]] = None,
+                 pos_scale: float = 0.5, rot_scale: float = 0.5, max_delta_pos: float = 0.02, max_delta_rot: float = 0.1, max_joint_delta: float = 0.05):
         self.right_arm_extrinsic = right_arm_extrinsic
         self.bimanual = bimanual
+        self.pos_scale = pos_scale
+        self.rot_scale = rot_scale
+        self.max_delta_pos = max_delta_pos  # Max position delta per frame (meters)
+        self.max_delta_rot = max_delta_rot  # Max rotation delta per frame (radians)
+        self.max_joint_delta = max_joint_delta  # Max joint change per frame (rad)
         if bimanual:
             assert right_arm_extrinsic is not None, "right_arm_extrinsic must be provided for bimanual robot"
         self.reset_state()
@@ -99,6 +105,7 @@ class OculusRecordAgent(Agent):
         self.vr_origin = {"left": None, "right": None}
         self.vr_state = {"left": None, "right": None}
         self.vr_prev_state = {"left": None, "right": None}
+        self.prev_joints = {"left": None, "right": None}
 
     def _update_internal_state(self, num_wait_sec = 5, hz=30):
         last_read_time = time.time()
@@ -200,20 +207,50 @@ class OculusRecordAgent(Agent):
         delta_quat_right = np.array([0.0, 0.0, 0.0, 1.0])
         
         if self.vr_state["left"] is not None and self.vr_prev_state["left"] is not None:
-            delta_pos_left = self.vr_state["left"]["pose"] - self.vr_prev_state["left"]["pose"]
+            delta_pos_left = (self.vr_state["left"]["pose"] - self.vr_prev_state["left"]["pose"]) * self.pos_scale
             delta_quat_left = quat_diff(self.vr_state["left"]["quat"], self.vr_prev_state["left"]["quat"])   
+            
+            # Limit delta position magnitude
+            delta_pos_norm = np.linalg.norm(delta_pos_left)
+            if delta_pos_norm > self.max_delta_pos:
+                delta_pos_left = delta_pos_left * (self.max_delta_pos / delta_pos_norm)
+            
+            # Apply rotation scaling and limit delta rotation magnitude
+            delta_rot = R.from_quat(delta_quat_left)
+            delta_rotvec = delta_rot.as_rotvec() * self.rot_scale
+            delta_rot_norm = np.linalg.norm(delta_rotvec)
+            if delta_rot_norm > self.max_delta_rot:
+                delta_rotvec = delta_rotvec * (self.max_delta_rot / delta_rot_norm)
+            delta_quat_left = R.from_rotvec(delta_rotvec).as_quat()
+            
             viser_desired_pos_left = viser_pos_left + delta_pos_left
             viser_desired_quat_left = (R.from_quat(delta_quat_left) * R.from_quat(viser_quat_left)).as_quat()
         
         if self.vr_state["right"] is not None and self.vr_prev_state["right"] is not None:
-            delta_pos_right = self.vr_state["right"]["pose"] - self.vr_prev_state["right"]["pose"]
+            delta_pos_right = (self.vr_state["right"]["pose"] - self.vr_prev_state["right"]["pose"]) * self.pos_scale
             delta_quat_right = quat_diff(self.vr_state["right"]["quat"], self.vr_prev_state["right"]["quat"])   
+            
+            # Limit delta position magnitude
+            delta_pos_norm = np.linalg.norm(delta_pos_right)
+            if delta_pos_norm > self.max_delta_pos:
+                delta_pos_right = delta_pos_right * (self.max_delta_pos / delta_pos_norm)
+            
+            # Apply rotation scaling and limit delta rotation magnitude
+            delta_rot = R.from_quat(delta_quat_right)
+            delta_rotvec = delta_rot.as_rotvec() * self.rot_scale
+            delta_rot_norm = np.linalg.norm(delta_rotvec)
+            if delta_rot_norm > self.max_delta_rot:
+                delta_rotvec = delta_rotvec * (self.max_delta_rot / delta_rot_norm)
+            delta_quat_right = R.from_rotvec(delta_rotvec).as_quat()
+            
             viser_desired_pos_right = viser_pos_right + delta_pos_right
             viser_desired_quat_right = (R.from_quat(delta_quat_right) * R.from_quat(viser_quat_right)).as_quat()
 
-
-        # avoid drift
-        self.vr_prev_state = self.vr_state.copy()
+        # Update prev state only when movement is enabled to avoid drift
+        if self.state["movement_enabled"]["left"] and self.vr_state["left"] is not None:
+            self.vr_prev_state["left"] = self.vr_state["left"].copy()
+        if self.state["movement_enabled"]["right"] and self.vr_state["right"] is not None:
+            self.vr_prev_state["right"] = self.vr_state["right"].copy()
         
         # Return the desired action
         return [np.concatenate([viser_desired_pos_left, [viser_desired_quat_left[3]], [viser_desired_quat_left[0]], [viser_desired_quat_left[1]], [viser_desired_quat_left[2]]]), 
@@ -283,6 +320,8 @@ class OculusRecordAgent(Agent):
             self.ik.transform_handles["left"].control.wxyz = np.array([0.5, 0.5, 0.5, 0.5])
             self.ik.transform_handles["right"].control.position = np.array([0.12, 0.00535176, 0.09107439])
             self.ik.transform_handles["right"].control.wxyz = np.array([0.5, 0.5, 0.5, 0.5])
+            # Clear prev_joints on reset to prevent jump in next episode
+            self.prev_joints = {"left": None, "right": None}
             return {}
 
         pose_left = np.asarray(self.ik.get_target_poses()["left"].translation())
@@ -302,15 +341,34 @@ class OculusRecordAgent(Agent):
         if viser_action is not None:
             self.ik.transform_handles["left"].control.position = viser_action[0][:3]
             self.ik.transform_handles["left"].control.wxyz = viser_action[0][3:]
-            self.left_gripper_slider_handle.value = 1 - self.state["buttons"].get("leftTrig", (0.0,))[0]
+            # Only update gripper when movement is enabled (grip button pressed)
+            if self.state["movement_enabled"]["left"]:
+                self.left_gripper_slider_handle.value = 1 - self.state["buttons"].get("leftTrig", (0.0,))[0]
             self.ik.transform_handles["right"].control.position = viser_action[1][:3]
             self.ik.transform_handles["right"].control.wxyz = viser_action[1][3:]
-            self.right_gripper_slider_handle.value = 1 - self.state["buttons"].get("rightTrig", (0.0,))[0]
+            if self.state["movement_enabled"]["right"]:
+                self.right_gripper_slider_handle.value = 1 - self.state["buttons"].get("rightTrig", (0.0,))[0]
         else:
             self.ik.transform_handles["left"].control.position = np.array([0.12, 0.00535176, 0.09107439])
             self.ik.transform_handles["left"].control.wxyz = np.array([0.5, 0.5, 0.5, 0.5])
             self.ik.transform_handles["right"].control.position = np.array([0.12, 0.00535176, 0.09107439])
             self.ik.transform_handles["right"].control.wxyz = np.array([0.5, 0.5, 0.5, 0.5])
+
+        # Apply joint velocity limit to prevent IK jumps (after IK calculation)
+        if self.prev_joints["left"] is not None:
+            joint_diff = self.ik.joints["left"] - self.prev_joints["left"]
+            joint_diff_clipped = np.clip(joint_diff, -self.max_joint_delta, self.max_joint_delta)
+            if not np.allclose(joint_diff, joint_diff_clipped):
+                self.ik.joints["left"] = self.prev_joints["left"] + joint_diff_clipped
+        self.prev_joints["left"] = self.ik.joints["left"].copy()
+
+        if self.bimanual and self.prev_joints["right"] is not None:
+            joint_diff = self.ik.joints["right"] - self.prev_joints["right"]
+            joint_diff_clipped = np.clip(joint_diff, -self.max_joint_delta, self.max_joint_delta)
+            if not np.allclose(joint_diff, joint_diff_clipped):
+                self.ik.joints["right"] = self.prev_joints["right"] + joint_diff_clipped
+        if self.bimanual:
+            self.prev_joints["right"] = self.ik.joints["right"].copy()
 
         action = {
             "left": {
