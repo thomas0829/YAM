@@ -91,7 +91,7 @@ from yam_realtime.envs.configs.instantiate import instantiate
 from yam_realtime.envs.configs.loader import DictLoader
 from yam_realtime.robots.utils import Rate, Timeout
 from yam_realtime.utils.launch_utils import cleanup_processes, initialize_agent, initialize_robots, initialize_sensors, setup_can_interfaces, setup_logging
-from yam_realtime.utils.camera_thread import EpisodeSaverThread
+from yam_realtime.utils.camera_thread import EpisodeSaverThread, LeRobotSaverThread
 
 import tqdm
 from yam_realtime.robots.inverse_kinematics.yam_pyroki import YamPyroki
@@ -282,6 +282,9 @@ def main(args: Args):
                 # The filter thread is already running and will handle new output
             
             logger.info(f"Creating LeRobot dataset: {repo_id}")
+            # Get total episodes to determine batch encoding size
+            total_episodes = storage_cfg.get('episodes', 10)
+            
             data_saver = LeRobotDataSaver(
                 repo_id=repo_id,  # "pick_up_the_cloth" - used for HF repo name
                 root=str(dataset_path),  # Full path: "data/lerobot/pick_up_the_cloth"
@@ -294,6 +297,9 @@ def main(args: Args):
                 image_writer_threads=len(camera_names) * 2 if camera_names else 4,
                 hf_user=storage_cfg.get('hf_user'),
                 auto_upload=storage_cfg.get('auto_upload', True),
+                # IMPORTANT: Batch encode videos to avoid blocking
+                # Videos will be encoded in one batch at the end
+                batch_encoding_size=total_episodes,  # Encode all at once at the end
             )
             
             logger.info(f"Dataset initialized: '{task_name}' -> {dataset_path}")
@@ -435,6 +441,7 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
     # Check if using LeRobot format
     is_lerobot = hasattr(data_saver, 'add_frame')
     
+    # Only use background thread for legacy JSON format
     if not is_lerobot:
         # Legacy format - use threaded saver
         previous_action = agent.act({})
@@ -459,6 +466,11 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
     # Main control loop
     while num_traj <= configs_dict['storage']['episodes']:
         obs = env.reset()
+        
+        # Reset agent state between episodes by calling act with empty obs
+        # This resets IK position and clears prev_joints to prevent cumulative drift
+        agent.act({})
+        
         if not is_lerobot:
             data_saver.reset_buffer()
         
@@ -536,16 +548,20 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
                         }
                     last_save_time = time.time()
                 next_obs = env.step(action)
-                obs = next_obs.copy()
+            else:
+                # Even when not moving, step with empty action to update camera observations
+                # This prevents duplicate frames in the video at the end
+                next_obs = env.step({})
+            obs = next_obs.copy()
         
         if save:
             if is_lerobot:
-                # LeRobot format - save episode directly
+                # LeRobot format - save directly (video encoding happens in background automatically)
                 if data_saver.episode_started:
                     logger.info(f"Saving LeRobot episode {num_traj}...")
                     data_saver.save_episode()
                     num_traj += 1
-                    logger.info(f"Successfully collected data")
+                    logger.info(f"Episode saved! (Video encoding continues in background)")
                 else:
                     logger.info(f"No data collected, skipping save")
             else:
@@ -561,9 +577,16 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
         reset_robot(agent, env, 'left')
         reset_robot(agent, env, 'right')
 
+    # Stop saver thread (only for legacy format)
     if not is_lerobot:
+        logger.info("Stopping background saver thread...")
         saver_thread.stop()
-        saver_thread.join()
+        logger.info("Waiting for all pending saves to complete...")
+        saver_thread.join(timeout=300)
+        if saver_thread.is_alive():
+            logger.warning("Background saver thread did not finish in time!")
+        else:
+            logger.info("All pending saves completed successfully")
 
     env.reset()
     logger.info(f"Finished collecting data")

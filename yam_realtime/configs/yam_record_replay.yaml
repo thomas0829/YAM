@@ -27,11 +27,11 @@ agent:
   right_arm_extrinsic:
       position: [0.0, -0.61, 0.0]
       rotation: [1.0, 0.0, 0.0, 0.0]
-  pos_scale: 0.6      # Position movement scale (controller 10cm → robot 6cm)
-  rot_scale: 0.6      # Rotation scale (controller 10° → robot 6°)
+  pos_scale: 0.5      # Position movement scale (controller 10cm → robot 5cm)
+  rot_scale: 0.5      # Rotation scale (controller 10° → robot 5°)
   max_delta_pos: 0.08  # Max position delta per frame (meters)
   max_delta_rot: 0.15   # Max rotation delta per frame (radians)
-  max_joint_delta: 0.05  # Max joint change per frame (rad) - prevents IK jumps
+  max_joint_delta: 0.08  # Max joint change per frame (rad) - prevents IK jumps
 
 station_metadata:
   world_frame: "left_arm" # front x, left y, up z
@@ -51,8 +51,8 @@ collection:
 # Data storage configuration
 storage:
   format: "lerobot"  # "lerobot" or "json" (legacy)
-  episodes: 3
-  task_name: "Pick up the cloth."
+  episodes: 5
+  task_name: "Put the cubes on the cloth."
   save_dir: "./data"
   fps: 30
   teleop_device: "oculus"  # ["oculus", "keyboard", "gello", "none"]

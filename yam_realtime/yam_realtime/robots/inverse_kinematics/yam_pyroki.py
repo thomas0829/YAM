@@ -53,6 +53,34 @@ class YamPyroki(ViserAbstractBase):
         """Setup PyRoki-specific components."""
         self.robot = pk.Robot.from_urdf(self.urdf)
         self.rest_pose = self.urdf.cfg
+        
+        # Warm up JIT compilation for both arms to avoid first-call latency
+        print("Warming up IK solver JIT compilation...")
+        dummy_position = np.array([0.12, 0.0, 0.1])
+        dummy_wxyz = np.array([0.5, 0.5, 0.5, 0.5])
+        
+        # Warm up left arm
+        _ = solve_ik(
+            robot=self.robot,
+            target_link_name=self.target_link_names[0],
+            target_position=dummy_position,
+            target_wxyz=dummy_wxyz,
+        )
+        self.has_jitted_left = True
+        print("  Left arm IK JIT compiled.")
+        
+        # Warm up right arm (same link but ensures full JIT warmup)
+        if self.bimanual:
+            _ = solve_ik(
+                robot=self.robot,
+                target_link_name=self.target_link_names[1],
+                target_position=dummy_position,
+                target_wxyz=dummy_wxyz,
+            )
+            self.has_jitted_right = True
+            print("  Right arm IK JIT compiled.")
+        
+        print("IK solver JIT warmup complete.")
 
     def _setup_gui(self):
         """Setup GUI elements."""

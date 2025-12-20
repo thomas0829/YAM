@@ -107,6 +107,21 @@ class OculusViserAgent(Agent):
         self.vr_prev_state = {"left": None, "right": None}
         self.prev_joints = {"left": None, "right": None}
 
+    def reset(self):
+        """
+        Reset agent state for a new episode.
+        This clears delta history and joint history to prevent residual movement.
+        """
+        # Reset VR tracking state
+        self.update_VR = {"left": True, "right": True}
+        self.reset_origin = {"left": True, "right": True}
+        self.viser_origin = {"left": None, "right": None}
+        self.vr_origin = {"left": None, "right": None}
+        # Keep current vr_state but clear prev to avoid delta calculation on first frame
+        self.vr_prev_state = {"left": None, "right": None}
+        # Clear prev_joints so the first frame doesn't get velocity-limited
+        self.prev_joints = {"left": None, "right": None}
+
     def _update_internal_state(self, num_wait_sec = 5, hz=10):
         last_read_time = time.time()
         while True:
@@ -186,27 +201,34 @@ class OculusViserAgent(Agent):
         # Reset origin if needed
         if self.reset_origin["left"] and self.vr_state["left"] is not None:
             self.viser_origin["left"] = {"pos": viser_pos_left, "quat": viser_quat_left, "gripper": viser_gripper_left}
-            self.vr_origin["left"] = {"pos": self.vr_state["left"]["pose"], "quat": self.vr_state["left"]["quat"], "gripper": self.vr_state["left"]["gripper"]}
+            self.vr_origin["left"] = {"pos": self.vr_state["left"]["pose"].copy(), "quat": self.vr_state["left"]["quat"].copy(), "gripper": self.vr_state["left"]["gripper"]}
             self.reset_origin["left"] = False
-            self.vr_prev_state["left"] = self.vr_state["left"].copy()
+            # Deep copy to avoid reference issues
+            self.vr_prev_state["left"] = {"pose": self.vr_state["left"]["pose"].copy(), 
+                                          "quat": self.vr_state["left"]["quat"].copy(), 
+                                          "gripper": self.vr_state["left"]["gripper"]}
             
         if self.reset_origin["right"] and self.vr_state["right"] is not None:
             self.viser_origin["right"] = {"right":{"pos": viser_pos_right, "quat": viser_quat_right, "gripper": viser_gripper_right}}
-            self.vr_origin["right"] = {"right":{"pos": self.vr_state["right"]["pose"], "quat": self.vr_state["right"]["quat"], "gripper": self.vr_state["right"]["gripper"]}}
+            self.vr_origin["right"] = {"right":{"pos": self.vr_state["right"]["pose"].copy(), "quat": self.vr_state["right"]["quat"].copy(), "gripper": self.vr_state["right"]["gripper"]}}
             self.reset_origin["right"] = False
-            self.vr_prev_state["right"] = self.vr_state["right"].copy()
+            # Deep copy to avoid reference issues
+            self.vr_prev_state["right"] = {"pose": self.vr_state["right"]["pose"].copy(), 
+                                           "quat": self.vr_state["right"]["quat"].copy(), 
+                                           "gripper": self.vr_state["right"]["gripper"]}
 
-        # Calculate delta action ande target action
+        # Calculate delta action and target action
         viser_desired_pos_left = viser_pos_left
         viser_desired_quat_left = viser_quat_left
         viser_desired_pos_right = viser_pos_right
         viser_desired_quat_right = viser_quat_right
         delta_pos_left = np.zeros(3)
-        delta_quat_left = np.zeros(4)
+        delta_quat_left = np.array([0.0, 0.0, 0.0, 1.0])  # identity quaternion (xyzw)
         delta_pos_right = np.zeros(3)
-        delta_quat_right = np.zeros(4)
+        delta_quat_right = np.array([0.0, 0.0, 0.0, 1.0])  # identity quaternion (xyzw)
         
-        if self.vr_state["left"] is not None:
+        # Only calculate delta if we have both current and previous VR states
+        if self.vr_state["left"] is not None and self.vr_prev_state["left"] is not None:
             delta_pos_left = (self.vr_state["left"]["pose"] - self.vr_prev_state["left"]["pose"]) * self.pos_scale
             delta_quat_left = quat_diff(self.vr_state["left"]["quat"], self.vr_prev_state["left"]["quat"])   
             
@@ -226,7 +248,8 @@ class OculusViserAgent(Agent):
             viser_desired_pos_left = viser_pos_left + delta_pos_left
             viser_desired_quat_left = (R.from_quat(delta_quat_left) * R.from_quat(viser_quat_left)).as_quat()
         
-        if self.vr_state["right"] is not None:
+        # Only calculate delta if we have both current and previous VR states
+        if self.vr_state["right"] is not None and self.vr_prev_state["right"] is not None:
             delta_pos_right = (self.vr_state["right"]["pose"] - self.vr_prev_state["right"]["pose"]) * self.pos_scale
             delta_quat_right = quat_diff(self.vr_state["right"]["quat"], self.vr_prev_state["right"]["quat"])   
             
@@ -247,8 +270,24 @@ class OculusViserAgent(Agent):
             viser_desired_quat_right = (R.from_quat(delta_quat_right) * R.from_quat(viser_quat_right)).as_quat()
 
 
-        # avoid drift
-        self.vr_prev_state = self.vr_state.copy()
+        # avoid drift - use deep copy to prevent reference issues
+        if self.vr_state["left"] is not None and self.vr_state["right"] is not None:
+            self.vr_prev_state = {
+                "left": {"pose": self.vr_state["left"]["pose"].copy(), 
+                         "quat": self.vr_state["left"]["quat"].copy(), 
+                         "gripper": self.vr_state["left"]["gripper"]},
+                "right": {"pose": self.vr_state["right"]["pose"].copy(), 
+                          "quat": self.vr_state["right"]["quat"].copy(), 
+                          "gripper": self.vr_state["right"]["gripper"]}
+            }
+        elif self.vr_state["left"] is not None:
+            self.vr_prev_state["left"] = {"pose": self.vr_state["left"]["pose"].copy(), 
+                                          "quat": self.vr_state["left"]["quat"].copy(), 
+                                          "gripper": self.vr_state["left"]["gripper"]}
+        elif self.vr_state["right"] is not None:
+            self.vr_prev_state["right"] = {"pose": self.vr_state["right"]["pose"].copy(), 
+                                           "quat": self.vr_state["right"]["quat"].copy(), 
+                                           "gripper": self.vr_state["right"]["gripper"]}
         
         # Return the desired action
         return [np.concatenate([viser_desired_pos_left, [viser_desired_quat_left[3]], [viser_desired_quat_left[0]], [viser_desired_quat_left[1]], [viser_desired_quat_left[2]]]), 
@@ -309,6 +348,21 @@ class OculusViserAgent(Agent):
             time.sleep(0.02)
 
     def act(self, obs: Dict[str, Any]) -> Any:
+        # If obs is empty or None, reset agent state for new episode
+        if not obs:
+            self.reset()
+            # Return current action without any delta applied
+            action = {
+                "left": {
+                    "pos": np.concatenate([np.flip(self.ik.joints["left"]), [self.left_gripper_slider_handle.value]]),
+                }
+            }
+            if self.bimanual:
+                action["right"] = {
+                    "pos": np.concatenate([np.flip(self.ik.joints["right"]), [self.right_gripper_slider_handle.value]]),
+                }
+            return action
+            
         pose_left = np.asarray(self.ik.get_target_poses()["left"].translation())
         quat_left = np.asarray(self.ik.get_target_poses()["left"].rotation().wxyz)
         xyzw_left = np.concatenate([quat_left[1:], [quat_left[0]]])

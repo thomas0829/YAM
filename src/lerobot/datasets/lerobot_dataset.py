@@ -1238,13 +1238,10 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.meta.save_episode(episode_index, episode_length, episode_tasks, ep_stats, ep_metadata)
 
         if has_video_keys and use_batched_encoding:
-            # Check if we should trigger batch encoding
+            # Just track how many episodes need encoding, don't encode yet
             self.episodes_since_last_encoding += 1
-            if self.episodes_since_last_encoding == self.batch_encoding_size:
-                start_ep = self.num_episodes - self.batch_encoding_size
-                end_ep = self.num_episodes
-                self._batch_save_episode_video(start_ep, end_ep)
-                self.episodes_since_last_encoding = 0
+            # Don't auto-trigger batch encoding during data collection
+            # It will be triggered in finalize() instead
 
         if not episode_data:
             # Reset episode buffer and clean up temporary images (if not already deleted during video encoding)
@@ -1265,43 +1262,85 @@ class LeRobotDataset(torch.utils.data.Dataset):
             f"Batch encoding {self.batch_encoding_size} videos for episodes {start_episode} to {end_episode - 1}"
         )
 
-        chunk_idx = self.meta.episodes[start_episode]["data/chunk_index"]
-        file_idx = self.meta.episodes[start_episode]["data/file_index"]
-        episode_df_path = self.root / DEFAULT_EPISODES_PATH.format(chunk_index=chunk_idx, file_index=file_idx)
-        episode_df = pd.read_parquet(episode_df_path)
+        # CRITICAL: Close metadata writer before batch encoding to ensure parquet file is complete
+        # _flush_metadata_buffer only writes data to the ParquetWriter, but doesn't close it.
+        # Without closing, the parquet file won't have proper footer (magic bytes) and cannot be read.
+        self.meta._close_writer()
 
+        # Track video metadata for each episode and camera
+        # Structure: {episode_index: {video_key: metadata}}
+        episodes_video_metadata = {}
+
+        # Track latest video metadata for concatenation (per camera)
+        latest_video_metadata = {video_key: None for video_key in self.meta.video_keys}
+
+        # Encode videos for each episode
         for ep_idx in range(start_episode, end_episode):
             logging.info(f"Encoding videos for episode {ep_idx}")
 
-            if (
-                self.meta.episodes[ep_idx]["data/chunk_index"] != chunk_idx
-                or self.meta.episodes[ep_idx]["data/file_index"] != file_idx
-            ):
-                # The current episode is in a new chunk or file.
-                # Save previous episode dataframe and update the Hugging Face dataset by reloading it.
-                episode_df.to_parquet(episode_df_path)
-                self.meta.episodes = load_episodes(self.root)
-
-                # Load new episode dataframe
-                chunk_idx = self.meta.episodes[ep_idx]["data/chunk_index"]
-                file_idx = self.meta.episodes[ep_idx]["data/file_index"]
-                episode_df_path = self.root / DEFAULT_EPISODES_PATH.format(
-                    chunk_index=chunk_idx, file_index=file_idx
-                )
-                episode_df = pd.read_parquet(episode_df_path)
-
-            # Save the current episode's video metadata to the dataframe
-            video_ep_metadata = {}
+            # Temporarily update latest_episode with video metadata from previous episode
+            # so that _save_episode_video can correctly append or create new video files
             for video_key in self.meta.video_keys:
-                video_ep_metadata.update(self._save_episode_video(video_key, ep_idx))
-            video_ep_metadata.pop("episode_index")
-            video_ep_df = pd.DataFrame(video_ep_metadata, index=[ep_idx]).convert_dtypes(
-                dtype_backend="pyarrow"
-            )  # allows NaN values along with integers
+                if latest_video_metadata[video_key] is not None:
+                    # Inject video metadata into latest_episode for this camera
+                    if self.meta.latest_episode is None:
+                        self.meta.latest_episode = {}
+                    for key, value in latest_video_metadata[video_key].items():
+                        if key != "episode_index":
+                            self.meta.latest_episode[key] = [value]
 
-            episode_df = episode_df.combine_first(video_ep_df)
-            episode_df.to_parquet(episode_df_path)
-            self.meta.episodes = load_episodes(self.root)
+            # Encode and save videos for this episode
+            episodes_video_metadata[ep_idx] = {}
+            for video_key in self.meta.video_keys:
+                video_metadata = self._save_episode_video(video_key, ep_idx)
+                # Store this episode's video metadata
+                episodes_video_metadata[ep_idx][video_key] = video_metadata
+                # Update latest for next episode
+                latest_video_metadata[video_key] = video_metadata
+        
+        # After batch encoding, update episodes metadata with video timestamps
+        # This is critical for proper video playback - each episode needs its timestamp range
+        logging.info(f"Updating episodes metadata with video timestamps for {len(episodes_video_metadata)} episodes")
+        logging.info(f"Episodes video metadata keys: {list(episodes_video_metadata.keys())}")
+        
+        ep_chunk_idx = 0
+        ep_file_idx = 0
+        ep_path = self.root / DEFAULT_EPISODES_PATH.format(chunk_index=ep_chunk_idx, file_index=ep_file_idx)
+        logging.info(f"Looking for episodes metadata at: {ep_path}")
+        
+        if ep_path.exists():
+            import pandas as pd
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+            
+            # Read existing parquet file
+            table = pq.read_table(ep_path)
+            df = table.to_pandas()
+            logging.info(f"Loaded episodes metadata with {len(df)} rows")
+            
+            # Update each episode with its video metadata
+            for ep_idx in range(start_episode, end_episode):
+                if ep_idx in episodes_video_metadata:
+                    mask = df['episode_index'] == ep_idx
+                    logging.info(f"Updating episode {ep_idx}, found {mask.sum()} rows")
+                    
+                    # Add all video metadata fields for all cameras
+                    for video_key, metadata in episodes_video_metadata[ep_idx].items():
+                        logging.info(f"  Camera {video_key}: {list(metadata.keys())}")
+                        for key, value in metadata.items():
+                            if key != "episode_index":
+                                # Add column if it doesn't exist
+                                if key not in df.columns:
+                                    df[key] = None
+                                df.loc[mask, key] = value
+            
+            # Convert back to PyArrow Table and write with proper schema
+            logging.info(f"Writing updated metadata back to {ep_path}")
+            updated_table = pa.Table.from_pandas(df, preserve_index=False)
+            pq.write_table(updated_table, ep_path, compression='snappy', use_dictionary=True)
+            logging.info("Episodes metadata updated successfully")
+        else:
+            logging.warning(f"Episodes metadata file not found at {ep_path}")
 
     def _save_episode_data(self, episode_buffer: dict) -> dict:
         """Save episode data to a parquet file and update the Hugging Face dataset of frames data.

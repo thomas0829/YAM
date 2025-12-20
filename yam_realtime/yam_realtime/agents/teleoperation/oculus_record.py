@@ -107,7 +107,9 @@ class OculusRecordAgent(Agent):
         self.vr_prev_state = {"left": None, "right": None}
         self.prev_joints = {"left": None, "right": None}
 
-    def _update_internal_state(self, num_wait_sec = 5, hz=30):
+    def _update_internal_state(self, num_wait_sec = 5, hz=90):
+        """Update VR state at high frequency (90Hz) to ensure smooth tracking.
+        This should be faster than the control loop (30Hz) to avoid stale data."""
         last_read_time = time.time()
         while True:
             time.sleep(1/hz)
@@ -161,16 +163,17 @@ class OculusRecordAgent(Agent):
         if self.state["poses"] == {}:
             return
 
-        # update VR state
+        # Update VR state every frame when movement is enabled (for smooth tracking)
+        # update_VR flag is only used to control origin reset, not VR reading
         if self.state["movement_enabled"]["left"]:
+            self._process_VR_reading_left()
             if self.update_VR["left"]:
-                self._process_VR_reading_left()
                 self.update_VR["left"] = False
 
         
         if self.state["movement_enabled"]["right"]:
+            self._process_VR_reading_right()
             if self.update_VR["right"]:
-                self._process_VR_reading_right()
                 self.update_VR["right"] = False
             
 
@@ -186,15 +189,21 @@ class OculusRecordAgent(Agent):
         # Reset origin if needed
         if self.reset_origin["left"] and self.vr_state["left"] is not None:
             self.viser_origin["left"] = {"pos": viser_pos_left, "quat": viser_quat_left, "gripper": viser_gripper_left}
-            self.vr_origin["left"] = {"pos": self.vr_state["left"]["pose"], "quat": self.vr_state["left"]["quat"], "gripper": self.vr_state["left"]["gripper"]}
+            self.vr_origin["left"] = {"pos": self.vr_state["left"]["pose"].copy(), "quat": self.vr_state["left"]["quat"].copy(), "gripper": self.vr_state["left"]["gripper"]}
             self.reset_origin["left"] = False
-            self.vr_prev_state["left"] = self.vr_state["left"].copy()
+            # Deep copy to avoid reference issues
+            self.vr_prev_state["left"] = {"pose": self.vr_state["left"]["pose"].copy(), 
+                                          "quat": self.vr_state["left"]["quat"].copy(), 
+                                          "gripper": self.vr_state["left"]["gripper"]}
             
         if self.reset_origin["right"] and self.vr_state["right"] is not None:
-            self.viser_origin["right"] = {"right":{"pos": viser_pos_right, "quat": viser_quat_right, "gripper": viser_gripper_right}}
-            self.vr_origin["right"] = {"right":{"pos": self.vr_state["right"]["pose"], "quat": self.vr_state["right"]["quat"], "gripper": self.vr_state["right"]["gripper"]}}
+            self.viser_origin["right"] = {"pos": viser_pos_right, "quat": viser_quat_right, "gripper": viser_gripper_right}
+            self.vr_origin["right"] = {"pos": self.vr_state["right"]["pose"].copy(), "quat": self.vr_state["right"]["quat"].copy(), "gripper": self.vr_state["right"]["gripper"]}
             self.reset_origin["right"] = False
-            self.vr_prev_state["right"] = self.vr_state["right"].copy()
+            # Deep copy to avoid reference issues
+            self.vr_prev_state["right"] = {"pose": self.vr_state["right"]["pose"].copy(), 
+                                           "quat": self.vr_state["right"]["quat"].copy(), 
+                                           "gripper": self.vr_state["right"]["gripper"]}
 
         # Calculate delta action ande target action
         viser_desired_pos_left = viser_pos_left
@@ -206,7 +215,8 @@ class OculusRecordAgent(Agent):
         delta_pos_right = np.zeros(3)
         delta_quat_right = np.array([0.0, 0.0, 0.0, 1.0])
         
-        if self.vr_state["left"] is not None and self.vr_prev_state["left"] is not None:
+        # Only calculate delta if we have both current and previous VR states AND movement is enabled
+        if self.vr_state["left"] is not None and self.vr_prev_state["left"] is not None and self.state["movement_enabled"]["left"]:
             delta_pos_left = (self.vr_state["left"]["pose"] - self.vr_prev_state["left"]["pose"]) * self.pos_scale
             delta_quat_left = quat_diff(self.vr_state["left"]["quat"], self.vr_prev_state["left"]["quat"])   
             
@@ -226,7 +236,8 @@ class OculusRecordAgent(Agent):
             viser_desired_pos_left = viser_pos_left + delta_pos_left
             viser_desired_quat_left = (R.from_quat(delta_quat_left) * R.from_quat(viser_quat_left)).as_quat()
         
-        if self.vr_state["right"] is not None and self.vr_prev_state["right"] is not None:
+        # Only calculate delta if we have both current and previous VR states AND movement is enabled
+        if self.vr_state["right"] is not None and self.vr_prev_state["right"] is not None and self.state["movement_enabled"]["right"]:
             delta_pos_right = (self.vr_state["right"]["pose"] - self.vr_prev_state["right"]["pose"]) * self.pos_scale
             delta_quat_right = quat_diff(self.vr_state["right"]["quat"], self.vr_prev_state["right"]["quat"])   
             
@@ -247,10 +258,15 @@ class OculusRecordAgent(Agent):
             viser_desired_quat_right = (R.from_quat(delta_quat_right) * R.from_quat(viser_quat_right)).as_quat()
 
         # Update prev state only when movement is enabled to avoid drift
+        # Use deep copy to avoid reference issues between vr_state and vr_prev_state
         if self.state["movement_enabled"]["left"] and self.vr_state["left"] is not None:
-            self.vr_prev_state["left"] = self.vr_state["left"].copy()
+            self.vr_prev_state["left"] = {"pose": self.vr_state["left"]["pose"].copy(), 
+                                          "quat": self.vr_state["left"]["quat"].copy(), 
+                                          "gripper": self.vr_state["left"]["gripper"]}
         if self.state["movement_enabled"]["right"] and self.vr_state["right"] is not None:
-            self.vr_prev_state["right"] = self.vr_state["right"].copy()
+            self.vr_prev_state["right"] = {"pose": self.vr_state["right"]["pose"].copy(), 
+                                           "quat": self.vr_state["right"]["quat"].copy(), 
+                                           "gripper": self.vr_state["right"]["gripper"]}
         
         # Return the desired action
         return [np.concatenate([viser_desired_pos_left, [viser_desired_quat_left[3]], [viser_desired_quat_left[0]], [viser_desired_quat_left[1]], [viser_desired_quat_left[2]]]), 
@@ -269,7 +285,7 @@ class OculusRecordAgent(Agent):
         for mesh in self.urdf_vis_left_real._meshes:
             mesh.opacity = 0.25  # type: ignore
         self.left_gripper_slider_handle = self.viser_server.gui.add_slider(
-            "Right Gripper", min=0.0, max=2.4, step=0.01, initial_value=0.0
+            "Right Gripper", min=0.0, max=2.4, step=0.01, initial_value=2.4
         )
 
         if self.bimanual and self.right_arm_extrinsic is not None:
@@ -288,7 +304,7 @@ class OculusRecordAgent(Agent):
             for mesh in self.urdf_vis_right_real._meshes:
                 mesh.opacity = 0.25  # type: ignore
             self.right_gripper_slider_handle = self.viser_server.gui.add_slider(
-                "Left Gripper", min=0.0, max=2.4, step=0.01, initial_value=0.0
+                "Left Gripper", min=0.0, max=2.4, step=0.01, initial_value=2.4
             )
 
         self.viser_cam_img_handles = {}
@@ -322,6 +338,10 @@ class OculusRecordAgent(Agent):
             self.ik.transform_handles["right"].control.wxyz = np.array([0.5, 0.5, 0.5, 0.5])
             # Clear prev_joints on reset to prevent jump in next episode
             self.prev_joints = {"left": None, "right": None}
+            # Reset VR origins to prevent cumulative drift between episodes
+            self.reset_origin = {"left": True, "right": True}
+            # Clear vr_prev_state so first frame won't have delta from old episode
+            self.vr_prev_state = {"left": None, "right": None}
             return {}
 
         pose_left = np.asarray(self.ik.get_target_poses()["left"].translation())
@@ -348,6 +368,10 @@ class OculusRecordAgent(Agent):
             self.ik.transform_handles["right"].control.wxyz = viser_action[1][3:]
             if self.state["movement_enabled"]["right"]:
                 self.right_gripper_slider_handle.value = 1 - self.state["buttons"].get("rightTrig", (0.0,))[0]
+            
+            # Immediately solve IK to get synchronized joint values
+            # This avoids relying on background IK thread timing
+            self.ik.solve_ik()
         else:
             self.ik.transform_handles["left"].control.position = np.array([0.12, 0.00535176, 0.09107439])
             self.ik.transform_handles["left"].control.wxyz = np.array([0.5, 0.5, 0.5, 0.5])

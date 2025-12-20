@@ -184,6 +184,7 @@ class LeRobotDataSaver:
         image_writer_threads: int = 4,
         hf_user: Optional[str] = None,
         auto_upload: bool = True,
+        batch_encoding_size: int = None,
     ):
         """
         Initialize LeRobot data saver.
@@ -200,6 +201,9 @@ class LeRobotDataSaver:
             image_writer_threads: Number of threads for image writing
             hf_user: Hugging Face username (e.g., "username"). If None, uses local repo_id
             auto_upload: Whether to automatically upload to Hugging Face on finalize
+            batch_encoding_size: Number of episodes to collect before encoding videos.
+                If None, videos are encoded immediately after each episode (slower but immediate).
+                If > 1, videos are encoded in batches (faster, no blocking during collection).
         """
         self.repo_id = repo_id
         
@@ -256,8 +260,12 @@ class LeRobotDataSaver:
                 use_videos=use_videos,
                 image_writer_processes=image_writer_processes,
                 image_writer_threads=image_writer_threads,
+                # Set batch_encoding_size to delay video encoding
+                batch_encoding_size=batch_encoding_size if batch_encoding_size else 1,
             )
             logger.info(f"LeRobot dataset created successfully")
+            if batch_encoding_size and batch_encoding_size > 1:
+                logger.info(f"Video encoding will happen in batches of {batch_encoding_size} episodes")
         
         self.episode_started = False
         
@@ -396,6 +404,47 @@ class LeRobotDataSaver:
         self.dataset.add_frame(frame_data)
         self.episode_started = True
     
+    def get_episode_buffer_copy(self):
+        """
+        Get a deep copy of the current episode buffer for background saving.
+        
+        After copying, this clears the episode_buffer (without deleting images)
+        so the main thread can immediately start a new episode.
+        
+        Returns:
+            A deep copy of the episode buffer, or None if no episode started.
+        """
+        import copy
+        if not self.episode_started:
+            return None
+        
+        if self.dataset.episode_buffer is None:
+            return None
+        
+        # CRITICAL: Wait for image writer to finish before copying
+        # This ensures all images are fully written to disk
+        logger.info("Waiting for image writer to finish before copying episode buffer...")
+        self.dataset._wait_image_writer()
+        logger.info("Image writer finished, copying episode buffer...")
+            
+        # Deep copy the episode buffer to avoid conflicts
+        episode_buffer_copy = {}
+        for key, value in self.dataset.episode_buffer.items():
+            if isinstance(value, list):
+                # Deep copy lists
+                episode_buffer_copy[key] = copy.deepcopy(value)
+            else:
+                # Copy other values (like episode_index, size, etc.)
+                episode_buffer_copy[key] = value
+        
+        # Clear the episode buffer immediately so the main thread can start a new episode
+        # DON'T delete images - let the background thread do that after encoding videos
+        self.dataset.clear_episode_buffer(delete_images=False)
+        self.episode_started = False
+        
+        logger.info(f"Episode buffer copied successfully (episode_index={episode_buffer_copy.get('episode_index')})")
+        return episode_buffer_copy
+    
     def save_episode(self) -> None:
         """
         Save the current episode to disk.
@@ -418,8 +467,29 @@ class LeRobotDataSaver:
         logger.info("Finalizing LeRobot dataset...")
         
         try:
+            # Encode any remaining episodes if using batch encoding
+            if hasattr(self.dataset, 'episodes_since_last_encoding') and self.dataset.episodes_since_last_encoding > 0:
+                logger.info(f"Encoding remaining {self.dataset.episodes_since_last_encoding} episodes...")
+                start_ep = self.dataset.num_episodes - self.dataset.episodes_since_last_encoding
+                end_ep = self.dataset.num_episodes
+                logger.info(f"Batch encoding episodes {start_ep} to {end_ep - 1}")
+                self.dataset._batch_save_episode_video(start_ep, end_ep)
+            
             self.dataset.stop_image_writer()
             self.dataset.finalize()
+            
+            # Clean up empty images directory if it exists
+            import shutil
+            from pathlib import Path
+            img_dir = Path(self.dataset.root) / "images"
+            if img_dir.exists():
+                # Check for any remaining PNG files
+                png_files = list(img_dir.rglob("*.png"))
+                if len(png_files) == 0:
+                    logger.info("Removing empty images directory...")
+                    shutil.rmtree(img_dir)
+                else:
+                    logger.warning(f"Images directory contains {len(png_files)} PNG files, not removing")
         except Exception as e:
             logger.error(f"Error during dataset finalization: {e}")
         
