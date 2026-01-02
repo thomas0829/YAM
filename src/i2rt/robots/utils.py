@@ -105,8 +105,8 @@ class GripperType(enum.Enum):
         """
         if self == GripperType.CRANK_4310:
             return (
-                0.5,
-                0.2,
+                0.03,  # EXTREME: Nearly zero threshold
+                1.0,
                 1.0,
                 partial(
                     zero_linkage_crank_gripper_force_torque_map,
