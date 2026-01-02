@@ -31,6 +31,11 @@ _env = None
 _bimanual = False
 _left_cfg = None
 _right_cfg = None
+_kb_interface = None
+_robot_client = None
+_cameras = None
+_agent = None
+_robot = None
 
 
 def cleanup():
@@ -41,20 +46,82 @@ def cleanup():
     cleanup_in_progress = True
 
     print("Cleaning up resources...")
-    if _bimanual:
-        move_to_start_position(_env, _bimanual, _left_cfg, _right_cfg)
-    else:
-        move_to_start_position(_env, _bimanual, _left_cfg)
+    
+    # Move robot to start position
+    try:
+        if _env is not None and _left_cfg is not None:
+            if _bimanual and _right_cfg is not None:
+                move_to_start_position(_env, _bimanual, _left_cfg, _right_cfg)
+            else:
+                move_to_start_position(_env, _bimanual, _left_cfg)
+    except Exception as e:
+        print(f"Error moving to start position: {e}")
+    
+    # Close agent (this closes Dynamixel drivers)
+    if _agent is not None:
+        try:
+            if hasattr(_agent, "close"):
+                _agent.close()
+                print("Agent closed")
+        except Exception as e:
+            print(f"Error closing agent: {e}")
+    
+    # Close robot (this closes motor drivers and CAN interfaces)
+    if _robot is not None:
+        try:
+            if hasattr(_robot, "close"):
+                _robot.close()
+                print("Robot closed")
+        except Exception as e:
+            print(f"Error closing robot: {e}")
+    
+    # Stop all ZMQ servers
     for server in active_servers:
         try:
+            if hasattr(server, "stop"):
+                server.stop()
             if hasattr(server, "close"):
                 server.close()
         except Exception as e:
-            print(f"Error closing server: {e}")
+            print(f"Error stopping/closing server: {e}")
 
+    # Wait for threads to finish with timeout
     for thread in active_threads:
         if thread.is_alive():
             thread.join(timeout=2)
+    
+    # Close robot client
+    if _robot_client is not None:
+        try:
+            if hasattr(_robot_client, "close"):
+                _robot_client.close()
+        except Exception as e:
+            print(f"Error closing robot client: {e}")
+    
+    # Close cameras
+    if _cameras is not None:
+        try:
+            for camera in _cameras.values():
+                if hasattr(camera, "close"):
+                    camera.close()
+        except Exception as e:
+            print(f"Error closing cameras: {e}")
+    
+    # Close environment
+    if _env is not None:
+        try:
+            if hasattr(_env, "close"):
+                _env.close()
+        except Exception as e:
+            print(f"Error closing environment: {e}")
+    
+    # Close pygame if keyboard interface was used
+    if _kb_interface is not None:
+        try:
+            import pygame
+            pygame.quit()
+        except Exception as e:
+            print(f"Error closing pygame: {e}")
 
     print("Cleanup completed.")
 
@@ -158,6 +225,10 @@ def main():
         "front_camera": RealSenseCamera(ids[1]),
         "right_camera": RealSenseCamera(ids[2]),
     }
+    
+    # Save to global for cleanup
+    global _cameras
+    _cameras = cameras
 
     bimanual = args.right_config_path is not None
 
@@ -175,6 +246,13 @@ def main():
     # Initialize data saver and keyboard interface
     data_saver = DataSaver(save_dir=left_cfg['storage']['base_dir'], task_directory=left_cfg['storage']['task_directory'], language_instruction=left_cfg['storage']['language_instruction'])
     kb_interface = KBReset()
+    
+    # Save to global for cleanup
+    global _kb_interface, _left_cfg, _right_cfg, _bimanual
+    _kb_interface = kb_interface
+    _left_cfg = left_cfg
+    _right_cfg = right_cfg if bimanual else None
+    _bimanual = bimanual
 
     # Create agent
     if bimanual:
@@ -186,6 +264,10 @@ def main():
         )
     else:
         agent = instantiate_from_dict(left_cfg["agent"])
+    
+    # Save to global for cleanup
+    global _agent
+    _agent = agent
 
     # Create robot(s)
     left_robot_cfg = left_cfg["robot"]
@@ -213,6 +295,10 @@ def main():
     else:
         robot = left_robot
         cfg = left_cfg
+    
+    # Save to global for cleanup
+    global _robot
+    _robot = robot
 
     # Handle different robot types
     if hasattr(robot, "serve"):  # MujocoRobotServer or ZMQServerRobot
@@ -224,8 +310,8 @@ def main():
         server_port = cfg["robot"].get("port", 5556)
         server_host = cfg["robot"].get("host", "127.0.0.1")
 
-        # Start server in background (non-daemon for proper cleanup)
-        server_thread = threading.Thread(target=robot.serve, daemon=False)
+        # Start server in background
+        server_thread = threading.Thread(target=robot.serve, daemon=True)
         server_thread.start()
 
         # Track for cleanup
@@ -249,7 +335,7 @@ def main():
 
         # Create ZMQ server for the hardware robot
         server = ZMQServerRobot(robot, port=hardware_port, host=hardware_host)
-        server_thread = threading.Thread(target=server.serve, daemon=False)
+        server_thread = threading.Thread(target=server.serve, daemon=True)
         server_thread.start()
 
         # Track for cleanup
@@ -268,13 +354,10 @@ def main():
 
     env = RobotEnv(robot_client, control_rate_hz=cfg.get("hz", 30), camera_dict=cameras)
 
-    # Store global variables for cleanup
-    # Store global variables for cleanup
-    global _env, _bimanual, _left_cfg, _right_cfg
+    # Store remaining global variables for cleanup
+    global _env, _robot_client
     _env = env
-    _bimanual = bimanual
-    _left_cfg = left_cfg
-    _right_cfg = right_cfg if bimanual else None
+    _robot_client = robot_client
 
     # Move robot to start_joints position if specified in config
     from gello.utils.launch_utils import move_to_start_position
@@ -308,7 +391,14 @@ def main():
         run_control_loop_prior(env, agent, left_cfg=left_cfg, right_cfg=right_cfg, data_saver=data_saver, kb_interface=kb_interface)
     else:
         run_control_loop_prior(env, agent, left_cfg=left_cfg, data_saver=data_saver, kb_interface=kb_interface)
-
+    
+    # Cleanup and exit after data collection is complete
+    print("\nData collection complete. Cleaning up...")
+    cleanup()
+    
+    # Explicitly exit the program - use os._exit to force immediate termination
+    import os
+    os._exit(0)
 
 
 if __name__ == "__main__":
