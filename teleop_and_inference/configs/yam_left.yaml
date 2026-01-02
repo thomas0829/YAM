@@ -24,10 +24,10 @@ collection:
 
 # Data storage configuration
 storage:
-  episodes: 50
-  base_dir: "/home/sean/Desktop/YAM/gello_software/data"
-  task_directory: "fold the cloth"
-  language_instruction: "fold the cloth"
+  episodes: 1
+  base_dir: "data"
+  task_directory: "put the dolls on the cloth"
+  language_instruction: "Put the dolls on the cloth."
   teleop_device: "oculus" # ["oculus", "keyboard", "gello", "none"]
   save_format: "json" # ["json", "npy"]
   old_format: false
