@@ -14,3 +14,5 @@ agent:
 hz: 30
 max_steps: 1000
 
+# Note: Right arm config shares storage settings with left arm config
+# The storage configuration is defined in yam_left.yaml

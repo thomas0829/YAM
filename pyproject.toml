@@ -74,6 +74,12 @@ dependencies = [
     "torch-optimizer",
     "mujoco==3.3.5",
     
+    # OpenPI/Orbax dependencies for model conversion
+    "orbax-checkpoint",
+    "jax",
+    "jaxlib",
+    "gsutil",
+    
     # Development tools
     "pytest>=7.0.0",
     "pytest-cov",

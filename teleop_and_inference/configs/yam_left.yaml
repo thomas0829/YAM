@@ -24,13 +24,17 @@ collection:
 
 # Data storage configuration
 storage:
-  episodes: 1
+  episodes: 50
   base_dir: "data"
   task_directory: "put the dolls on the cloth"
   language_instruction: "Put the dolls on the cloth."
-  teleop_device: "oculus" # ["oculus", "keyboard", "gello", "none"]
-  save_format: "json" # ["json", "npy"]
+  teleop_device: "gello" # ["oculus", "keyboard", "gello", "none"]
+  save_format: "lerobot" # ["json", "npy", "lerobot"]
   old_format: false
+  # LeRobot specific settings
+  hf_user: thomas0829  # Hugging Face username (e.g., "your-username"), null for local only
+  auto_upload: true  # Automatically upload to Hugging Face after data collection
+  batch_encoding: true  # Batch encode videos at the end (much faster for multiple episodes)
 
 # Policy configuration
 policy:

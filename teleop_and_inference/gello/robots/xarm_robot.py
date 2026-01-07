@@ -280,11 +280,14 @@ class XArmRobot(Robot):
             count += 1
             if count % 1000 == 0:
                 # Mean, Std, Min, Max, only show 3 decimal places and string pad with 10 spaces
-                frequency = 1 / np.mean(step_times)
-                # print(f"Step time - mean: {np.mean(step_times):10.3f}, std: {np.std(step_times):10.3f}, min: {np.min(step_times):10.3f}, max: {np.max(step_times):10.3f}")
-                print(
-                    f"Low  Level Frequency - mean: {frequency:10.3f}, std: {np.std(frequency):10.3f}, min: {np.min(frequency):10.3f}, max: {np.max(frequency):10.3f}"
-                )
+                if len(step_times) > 0:
+                    step_times_array = np.array(step_times)
+                    mean_time = np.mean(step_times_array)
+                    frequency = 1 / mean_time if mean_time > 0 else 0
+                    # print(f"Step time - mean: {np.mean(step_times):10.3f}, std: {np.std(step_times):10.3f}, min: {np.min(step_times):10.3f}, max: {np.max(step_times):10.3f}")
+                    print(
+                        f"Low  Level Frequency - mean: {frequency:10.3f} Hz"
+                    )
                 step_times = []
 
     def _update_last_state(self) -> RobotState:

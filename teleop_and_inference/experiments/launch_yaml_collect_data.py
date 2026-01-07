@@ -22,6 +22,21 @@ from gello.data_utils.keyboard_interface import KBReset
 from gello.utils.control_utils import run_control_loop_prior
 from gello.zmq_core.camera_node import ZMQClientCamera, ZMQServerCamera
 
+# Import LeRobot data saver if available
+try:
+    import sys
+    from pathlib import Path
+    # Add YAM root directory to path (contains src/ and yam_realtime/)
+    # teleop_and_inference/experiments/launch_yaml_collect_data.py -> go up 2 levels to YAM root
+    yam_root = Path(__file__).resolve().parents[2]
+    if str(yam_root) not in sys.path:
+        sys.path.insert(0, str(yam_root))
+    from yam_realtime.yam_realtime.utils.lerobot_data_saver import LeRobotDataSaver
+    LEROBOT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: LeRobotDataSaver not available: {e}")
+    LEROBOT_AVAILABLE = False
+
 # Global variables for cleanup
 active_threads = []
 active_servers = []
@@ -244,8 +259,102 @@ def main():
         right_cfg = update_offsets(right_cfg)
 
     # Initialize data saver and keyboard interface
-    data_saver = DataSaver(save_dir=left_cfg['storage']['base_dir'], task_directory=left_cfg['storage']['task_directory'], language_instruction=left_cfg['storage']['language_instruction'])
+    save_format = left_cfg['storage'].get('save_format', 'json')
+    
+    # Create keyboard interface FIRST (initializes pygame window)
     kb_interface = KBReset()
+    
+    if save_format == 'lerobot':
+        if not LEROBOT_AVAILABLE:
+            raise ImportError("LeRobotDataSaver is not available. Please install lerobot package.")
+        
+        # Create LeRobot data saver
+        task_directory = left_cfg['storage']['task_directory']
+        repo_id = task_directory.replace(' ', '_').lower()  # For HF repo name and folder name
+        base_dir = Path(left_cfg['storage']['base_dir'])
+        
+        # Dataset path: data/repo_id (use underscore version)
+        dataset_path = base_dir / repo_id
+        
+        # Check if dataset already exists
+        if dataset_path.exists() and (dataset_path / "meta" / "info.json").exists():
+            # Use pygame dialog for selection
+            choice = kb_interface.show_options(
+                f"Dataset exists: {repo_id}",
+                [
+                    "1. Continue - Append new episodes",
+                    "2. Delete - Remove and start fresh",
+                    "3. Rename - Backup and create new",
+                    "4. Exit"
+                ]
+            )
+            
+            # Process choice
+            if choice == 0:  # Continue
+                kb_interface.update_status(message='Appending to existing dataset')
+                print(f"✓ Will append to existing dataset")
+            elif choice == 1:  # Delete
+                import shutil
+                kb_interface.update_status(message=f'Deleting {dataset_path.name}...')
+                print(f"Deleting {dataset_path}...")
+                shutil.rmtree(dataset_path)
+                kb_interface.update_status(message='Deleted existing dataset')
+                print(f"✓ Deleted existing dataset")
+            elif choice == 2:  # Rename
+                import datetime
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                new_name = dataset_path.parent / f"{dataset_path.name}_backup_{timestamp}"
+                kb_interface.update_status(message=f'Renaming to backup_{timestamp}...')
+                print(f"Renaming {dataset_path} -> {new_name}")
+                dataset_path.rename(new_name)
+                kb_interface.update_status(message=f'Renamed to backup')
+                print(f"✓ Renamed to {new_name}")
+            else:  # Exit
+                print("Exiting...")
+                import sys
+                sys.exit(0)
+        
+        print(f"Creating LeRobot dataset:")
+        print(f"  Task: {task_directory}")
+        print(f"  Repo ID: {repo_id}")
+        print(f"  Dataset path: {dataset_path}")
+        
+        # Get total episodes for batch encoding
+        total_episodes = left_cfg['storage'].get('episodes', 1)
+        batch_encoding = left_cfg['storage'].get('batch_encoding', False)
+        
+        # Set batch encoding size based on config
+        if batch_encoding:
+            batch_encoding_size = total_episodes  # Encode all at once at the end
+            print(f"  Batch encoding: Enabled (will encode all {total_episodes} episodes at the end)")
+        else:
+            batch_encoding_size = None  # Encode immediately after each episode
+            print(f"  Batch encoding: Disabled (encoding after each episode)")
+        
+        data_saver = LeRobotDataSaver(
+            repo_id=repo_id,  # Used for HF repo name
+            root=str(dataset_path),  # Full path to dataset directory
+            fps=left_cfg.get('hz', 30),
+            task_name=left_cfg['storage']['language_instruction'],
+            robot_type="yam",
+            camera_names=["left_camera", "front_camera", "right_camera"],
+            use_videos=True,
+            image_writer_processes=4,
+            image_writer_threads=4,
+            hf_user=left_cfg['storage'].get('hf_user'),  # Read from config
+            auto_upload=left_cfg['storage'].get('auto_upload', False),  # Read from config
+            batch_encoding_size=batch_encoding_size,  # Batch encode for better performance
+        )
+        print(f"Using LeRobot data saver for dataset: {task_directory}")
+        print(f"Dataset will be saved to: {dataset_path}")
+    else:
+        # Use legacy DataSaver for json/npy formats
+        data_saver = DataSaver(
+            save_dir=left_cfg['storage']['base_dir'],
+            task_directory=left_cfg['storage']['task_directory'],
+            language_instruction=left_cfg['storage']['language_instruction']
+        )
+        print(f"Using legacy DataSaver with format: {save_format}")
     
     # Save to global for cleanup
     global _kb_interface, _left_cfg, _right_cfg, _bimanual
@@ -388,13 +497,60 @@ def main():
 
     # Run main control loop
     if bimanual:
-        run_control_loop_prior(env, agent, left_cfg=left_cfg, right_cfg=right_cfg, data_saver=data_saver, kb_interface=kb_interface)
+        data_saver = run_control_loop_prior(env, agent, left_cfg=left_cfg, right_cfg=right_cfg, data_saver=data_saver, kb_interface=kb_interface)
     else:
-        run_control_loop_prior(env, agent, left_cfg=left_cfg, data_saver=data_saver, kb_interface=kb_interface)
+        data_saver = run_control_loop_prior(env, agent, left_cfg=left_cfg, data_saver=data_saver, kb_interface=kb_interface)
     
-    # Cleanup and exit after data collection is complete
-    print("\nData collection complete. Cleaning up...")
+    # Data collection complete - now cleanup resources BEFORE video encoding
+    print("\n" + "=" * 60)
+    print("Data collection complete!")
+    print("Cleaning up robot and camera resources...")
+    print("=" * 60)
     cleanup()
+    
+    # Now do video encoding with maximum resources available
+    if data_saver is not None and save_format == 'lerobot':
+        print("\n" + "=" * 60)
+        print("Starting video encoding (this may take several minutes)...")
+        print("All robot and camera resources have been released.")
+        print("=" * 60)
+        
+        kb_interface.update_status_and_draw(
+            state='Finalizing',
+            message='Encoding videos... Please wait'
+        )
+        
+        # Keep updating display during finalization
+        import threading
+        import time as time_module
+        
+        finalize_done = threading.Event()
+        
+        def finalize_thread():
+            data_saver.finalize()
+            finalize_done.set()
+        
+        # Start finalization in background
+        thread = threading.Thread(target=finalize_thread, daemon=True)
+        thread.start()
+        
+        # Update display while waiting
+        while not finalize_done.is_set():
+            kb_interface.update_status_and_draw(
+                state='Finalizing',
+                message='Encoding videos... Please wait'
+            )
+            # Process pygame events to keep window responsive
+            pygame.event.pump()
+            time_module.sleep(0.5)
+        
+        thread.join()
+        print("\n" + "=" * 60)
+        print("Video encoding complete!")
+        print("=" * 60)
+        
+        kb_interface.update_status_and_draw(state='Done', message='All done!')
+        time_module.sleep(2)  # Show final message
     
     # Explicitly exit the program - use os._exit to force immediate termination
     import os

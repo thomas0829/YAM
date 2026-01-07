@@ -243,6 +243,13 @@ class LeRobotDataSaver:
                 logger.info(f"Loading existing local dataset: {repo_id}")
                 # Load from local path without querying Hugging Face
                 self.dataset = LeRobotDataset(repo_id, root=str(self.root), local_files_only=True)
+                
+                # CRITICAL: Set batch_encoding_size even for loaded datasets!
+                # Otherwise it defaults to 1 and encodes immediately
+                if batch_encoding_size and batch_encoding_size > 1:
+                    self.dataset.batch_encoding_size = batch_encoding_size
+                    logger.info(f"Set batch_encoding_size to {batch_encoding_size} for existing dataset")
+                
                 logger.info(f"Loaded existing dataset with {self.dataset.num_episodes} episodes")
             except Exception as e:
                 logger.warning(f"Failed to load existing dataset: {e}")
@@ -260,12 +267,16 @@ class LeRobotDataSaver:
                 use_videos=use_videos,
                 image_writer_processes=image_writer_processes,
                 image_writer_threads=image_writer_threads,
-                # Set batch_encoding_size to delay video encoding
-                batch_encoding_size=batch_encoding_size if batch_encoding_size else 1,
             )
-            logger.info(f"LeRobot dataset created successfully")
+            
+            # CRITICAL: Set batch_encoding_size AFTER creating dataset
+            # LeRobotDataset.create() doesn't accept this parameter
             if batch_encoding_size and batch_encoding_size > 1:
+                self.dataset.batch_encoding_size = batch_encoding_size
+                logger.info(f"Set batch_encoding_size to {batch_encoding_size}")
                 logger.info(f"Video encoding will happen in batches of {batch_encoding_size} episodes")
+            
+            logger.info(f"LeRobot dataset created successfully")
         
         self.episode_started = False
         
@@ -401,15 +412,13 @@ class LeRobotDataSaver:
                 raise KeyError(f"Camera {camera_name} not found in observation")
         
         # Add frame to episode buffer
+        # Note: LeRobotDataset.add_frame() will auto-create episode_buffer if it's None
         self.dataset.add_frame(frame_data)
         self.episode_started = True
     
     def get_episode_buffer_copy(self):
         """
         Get a deep copy of the current episode buffer for background saving.
-        
-        After copying, this clears the episode_buffer (without deleting images)
-        so the main thread can immediately start a new episode.
         
         Returns:
             A deep copy of the episode buffer, or None if no episode started.
@@ -420,12 +429,6 @@ class LeRobotDataSaver:
         
         if self.dataset.episode_buffer is None:
             return None
-        
-        # CRITICAL: Wait for image writer to finish before copying
-        # This ensures all images are fully written to disk
-        logger.info("Waiting for image writer to finish before copying episode buffer...")
-        self.dataset._wait_image_writer()
-        logger.info("Image writer finished, copying episode buffer...")
             
         # Deep copy the episode buffer to avoid conflicts
         episode_buffer_copy = {}
@@ -437,12 +440,7 @@ class LeRobotDataSaver:
                 # Copy other values (like episode_index, size, etc.)
                 episode_buffer_copy[key] = value
         
-        # Clear the episode buffer immediately so the main thread can start a new episode
-        # DON'T delete images - let the background thread do that after encoding videos
-        self.dataset.clear_episode_buffer(delete_images=False)
-        self.episode_started = False
-        
-        logger.info(f"Episode buffer copied successfully (episode_index={episode_buffer_copy.get('episode_index')})")
+        logger.info(f"Episode buffer copied successfully (episode_index={episode_buffer_copy.get('episode_index')}, size={episode_buffer_copy.get('size')})")
         return episode_buffer_copy
     
     def save_episode(self) -> None:
@@ -475,12 +473,17 @@ class LeRobotDataSaver:
                 logger.info(f"Batch encoding episodes {start_ep} to {end_ep - 1}")
                 self.dataset._batch_save_episode_video(start_ep, end_ep)
             
+            logger.info("Stopping image writer...")
             self.dataset.stop_image_writer()
+            
+            logger.info("Calling dataset.finalize()...")
             self.dataset.finalize()
+            logger.info("Dataset finalize() completed")
             
             # Clean up empty images directory if it exists
             import shutil
             from pathlib import Path
+            logger.info("Cleaning up images directory...")
             img_dir = Path(self.dataset.root) / "images"
             if img_dir.exists():
                 # Check for any remaining PNG files
@@ -492,12 +495,18 @@ class LeRobotDataSaver:
                     logger.warning(f"Images directory contains {len(png_files)} PNG files, not removing")
         except Exception as e:
             logger.error(f"Error during dataset finalization: {e}")
+            import traceback
+            traceback.print_exc()
         
         # Create .gitattributes and README.md in dataset root
-        # Note: self.root is already the full dataset path (e.g., data/lerobot/pick_up_the_cloth)
-        dataset_root = self.root
+        # Use dataset.root which is the actual dataset directory
+        dataset_root = Path(self.dataset.root)
         try:
+            logger.info("Creating dataset files (.gitattributes, README.md)...")
             self._create_dataset_files(dataset_root)
+            logger.info("Dataset files created successfully")
+        except Exception as e:
+            logger.warning(f"Error creating dataset files (.gitattributes, README.md): {e}")
         except Exception as e:
             logger.warning(f"Error creating dataset files (.gitattributes, README.md): {e}")
         
