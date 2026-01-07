@@ -890,8 +890,21 @@ class PI05Policy(PreTrainedPolicy):
         self.init_rtc_processor()
         self.model = PI05Pytorch(config, rtc_processor=self.rtc_processor)
 
-        # Enable gradient checkpointing if requested
-        if config.gradient_checkpointing:
+        # Apply LoRA if requested
+        if config.use_lora:
+            # LoRA and gradient checkpointing don't work well together, disable gradient checkpointing
+            if config.gradient_checkpointing:
+                logging.warning("Gradient checkpointing is not recommended with LoRA, disabling it")
+                config.gradient_checkpointing = False
+            
+            self.wrap_lora(
+                r=config.lora_rank,
+                lora_alpha=config.lora_alpha,
+                lora_dropout=config.lora_dropout,
+                target_modules=config.lora_target_modules,
+            )
+        # Enable gradient checkpointing if requested (only when not using LoRA)
+        elif config.gradient_checkpointing:
             self.model.gradient_checkpointing_enable()
 
         self.model.to(config.device)
@@ -1019,6 +1032,103 @@ class PI05Policy(PreTrainedPolicy):
             print(f"Warning: Could not remap state dict keys: {e}")
 
         return model
+
+    def wrap_lora(
+        self,
+        r: int = 16,
+        lora_alpha: float = 32.0,
+        lora_dropout: float = 0.1,
+        target_modules: list[str] | None = None,
+    ):
+        """Apply LoRA (Low-Rank Adaptation) to the PI05 model for efficient fine-tuning.
+
+        Args:
+            r: Rank of the LoRA decomposition matrices
+            lora_alpha: LoRA scaling factor (typically 2x the rank)
+            lora_dropout: Dropout probability for LoRA layers
+            target_modules: List of module names to apply LoRA to. If None, applies to default modules.
+        """
+        try:
+            from peft import LoraConfig, get_peft_model
+        except ImportError as e:
+            raise ImportError(
+                "PEFT library is required for LoRA support. Install it with: pip install peft"
+            ) from e
+
+        # Default target modules for PI05 (Gemma-based architecture)
+        if target_modules is None:
+            target_modules = [
+                # Language model attention layers (PaliGemma)
+                "self_attn.q_proj",
+                "self_attn.k_proj",
+                "self_attn.v_proj",
+                "self_attn.o_proj",
+                # Language model MLP layers
+                "mlp.gate_proj",
+                "mlp.up_proj",
+                "mlp.down_proj",
+            ]
+
+        logging.info(f"Applying LoRA to PI05 model with rank={r}, alpha={lora_alpha}, dropout={lora_dropout}")
+        logging.info(f"Target modules: {target_modules}")
+
+        # Apply LoRA to PaliGemma language model
+        # Note: Don't use task_type since these are base GemmaModel instances, not CausalLM
+        lora_config_language = LoraConfig(
+            r=r,
+            lora_alpha=lora_alpha,
+            target_modules=target_modules,
+            lora_dropout=lora_dropout,
+            bias="none",
+        )
+        self.model.paligemma_with_expert.paligemma.language_model = get_peft_model(
+            self.model.paligemma_with_expert.paligemma.language_model, lora_config_language
+        )
+        if hasattr(self.model.paligemma_with_expert.paligemma.language_model, 'print_trainable_parameters'):
+            self.model.paligemma_with_expert.paligemma.language_model.print_trainable_parameters()
+
+        # Apply LoRA to Gemma expert (action expert)
+        lora_config_expert = LoraConfig(
+            r=r,
+            lora_alpha=lora_alpha,
+            target_modules=target_modules,
+            lora_dropout=lora_dropout,
+            bias="none",
+        )
+        self.model.paligemma_with_expert.gemma_expert.model = get_peft_model(
+            self.model.paligemma_with_expert.gemma_expert.model, lora_config_expert
+        )
+        if hasattr(self.model.paligemma_with_expert.gemma_expert.model, 'print_trainable_parameters'):
+            self.model.paligemma_with_expert.gemma_expert.model.print_trainable_parameters()
+
+        # Print overall trainable parameters
+        total_params = sum(p.numel() for p in self.model.parameters())
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        logging.info(f"Total parameters: {total_params:,} | Trainable: {trainable_params:,} ({trainable_params/total_params*100:.2f}%)")
+
+        # Apply LoRA to vision tower (optional - usually we don't apply LoRA to vision encoders)
+        # Uncomment if you want to apply LoRA to the vision encoder as well:
+        # vision_target_modules = [
+        #     "self_attn.q_proj",
+        #     "self_attn.k_proj",
+        #     "self_attn.v_proj",
+        #     "self_attn.out_proj",
+        #     "mlp.fc1",
+        #     "mlp.fc2",
+        # ]
+        # lora_config_vision = LoraConfig(
+        #     r=r,
+        #     lora_alpha=lora_alpha,
+        #     target_modules=vision_target_modules,
+        #     lora_dropout=lora_dropout,
+        #     bias="none",
+        # )
+        # self.model.paligemma_with_expert.paligemma.vision_tower = get_peft_model(
+        #     self.model.paligemma_with_expert.paligemma.vision_tower, lora_config_vision
+        # )
+        # self.model.paligemma_with_expert.paligemma.vision_tower.print_trainable_parameters()
+
+        logging.info("✓ LoRA successfully applied to PI05 model")
 
     def _fix_pytorch_state_dict_keys(
         self, state_dict, model_config

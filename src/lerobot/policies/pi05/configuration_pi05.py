@@ -71,6 +71,13 @@ class PI05Config(PreTrainedConfig):
     compile_mode: str = "max-autotune"  # Torch compile mode
     device: str | None = None  # Device to use for the model (None = auto-detect)
 
+    # LoRA settings
+    use_lora: bool = False  # Enable LoRA (Low-Rank Adaptation) for efficient fine-tuning
+    lora_rank: int = 16  # Rank of LoRA matrices (r in the paper)
+    lora_alpha: float = 32.0  # LoRA scaling factor (usually 2x rank)
+    lora_dropout: float = 0.1  # Dropout probability for LoRA layers
+    lora_target_modules: list[str] | None = None  # Target modules for LoRA (None = auto-detect)
+
     # Optimizer settings: see openpi `AdamW`
     optimizer_lr: float = 2.5e-5  # see openpi `CosineDecaySchedule: peak_lr`
     optimizer_betas: tuple[float, float] = (0.9, 0.95)

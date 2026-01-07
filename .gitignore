@@ -127,6 +127,10 @@ src/lerobot/data/
 src/lerobot/outputs/
 *.cache
 
+# Training outputs
+output/
+outputs/
+
 # PI05 model files
 pi05_base/
 pi05_pytorch/

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Fine-tune pi05_droid model on pick_up_four_cubes dataset
-# This script uses lerobot-train to fine-tune the pretrained pi05_droid model
+# Fine-tune pi05 model on pick_up_four_cubes dataset
+# This script uses lerobot-train to fine-tune the pretrained pi05 model
 
 # Get the script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,7 +16,7 @@ conda activate yam
 PRETRAINED_MODEL="$SCRIPT_DIR/pi05_pytorch"
 DATASET_PATH="$SCRIPT_DIR/datasets/pick_up_four_cubes_and_stack_them_in_the_middle-v3.0"
 DATASET_REPO_ID="thomas0829/pick_up_four_cubes_and_stack_them_in_the_middle-v3.0"
-OUTPUT_DIR="$SCRIPT_DIR/outputs/finetune_pi05_$(date +%Y%m%d_%H%M%S)"
+OUTPUT_DIR="$SCRIPT_DIR/output/finetune_pi05_$(date +%Y%m%d_%H%M%S)"
 
 # Set CUDA memory optimization to reduce fragmentation
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -50,7 +50,9 @@ python src/lerobot/scripts/lerobot_train.py \
     --save_checkpoint=true \
     --seed=1000 \
     --num_workers=4 \
-    --wandb.enable=false
+    --wandb.enable=true \
+    --wandb.project="yam-pi05-finetune" \
+    --wandb.notes="Full fine-tuning of pi05 on pick_up_four_cubes dataset"
 
 echo "========================================"
 echo "Training completed!"
