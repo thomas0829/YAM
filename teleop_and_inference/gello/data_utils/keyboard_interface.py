@@ -42,15 +42,18 @@ class KBReset:
         
         # Status data
         self.status = {
-            'state': 'Waiting',  # Waiting, Collecting, Saving
+            'state': 'Initializing',  # Initializing, Waiting, Collecting, Saving
             'episode': 0,
             'total_episodes': 5,
             'frames_collected': 0,
             'fps': 0.0,
-            'message': 'Press S to start',
+            'message': 'Initializing... Please wait',
             'left_arm': [0.0] * 7,
             'right_arm': [0.0] * 7,
         }
+        
+        # Whether the system is ready to accept commands
+        self._ready = False
         
         # Options dialog state
         self.show_options_dialog = False
@@ -92,12 +95,21 @@ class KBReset:
                         self.selected_option = max(0, self.selected_option - 1)
                     elif event.key == pygame.K_DOWN:
                         self.selected_option = min(len(options) - 1, self.selected_option + 1)
-                    elif event.key == pygame.K_RETURN:
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         self.user_choice = self.selected_option
         
         self.show_options_dialog = False
         self._draw_status()
         return self.user_choice
+
+    def set_ready(self):
+        """Mark the system as ready. Enables key input and shows 'Press S to start'."""
+        # Flush any buffered key events from initialization phase
+        pygame.event.clear()
+        self._ready = True
+        self.status['state'] = 'Waiting'
+        self.status['message'] = 'Press S to start'
+        self._draw_status()
 
     def update(self) -> str:
         """Check for keyboard input and update display."""
@@ -106,17 +118,25 @@ class KBReset:
         # Draw status to keep display responsive
         self._draw_status()
         
-        if KEY_START in pressed_last:
+        # Ignore key input if not ready
+        if not self._ready:
+            return "normal"
+        
+        state = self.status['state']
+        
+        # Only allow S in Waiting state
+        if state == 'Waiting' and KEY_START in pressed_last:
             self.status['state'] = 'Collecting'
             self._set_color(BLUE)
             self._draw_status()
             return "start"
-        if KEY_SAVE in pressed_last:
+        # Only allow A/B in Collecting state
+        if state == 'Collecting' and KEY_SAVE in pressed_last:
             self.status['state'] = 'Saving'
             self._set_color(GREEN)
             self._draw_status()
             return "save"
-        if KEY_DISCARD in pressed_last:
+        if state == 'Collecting' and KEY_DISCARD in pressed_last:
             self.status['state'] = 'Waiting'
             self._set_color(RED)
             self._draw_status()
@@ -147,7 +167,9 @@ class KBReset:
         # Title bar
         title_rect = pygame.Rect(0, 0, self.width, 50)
         state = self.status['state']
-        if state == 'Collecting':
+        if state == 'Initializing':
+            bg_color = COLOR_WARNING
+        elif state == 'Collecting':
             bg_color = COLOR_PRIMARY
         elif state == 'Saving':
             bg_color = COLOR_SUCCESS

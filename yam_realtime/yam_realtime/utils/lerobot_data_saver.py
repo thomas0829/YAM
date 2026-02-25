@@ -179,6 +179,8 @@ class LeRobotDataSaver:
         task_name: str = "default_task",
         robot_type: str = "yam",
         camera_names: list[str] = None,
+        camera_width: int = 640,
+        camera_height: int = 480,
         use_videos: bool = True,
         image_writer_processes: int = 4,
         image_writer_threads: int = 4,
@@ -218,6 +220,8 @@ class LeRobotDataSaver:
         self.task_name = task_name
         self.robot_type = robot_type
         self.camera_names = camera_names or []
+        self.camera_width = camera_width
+        self.camera_height = camera_height
         self.hf_user = hf_user
         self.auto_upload = auto_upload
         
@@ -320,7 +324,7 @@ class LeRobotDataSaver:
         for camera_name in self.camera_names:
             features[f"observation.images.{camera_name}"] = {
                 "dtype": "video",
-                "shape": (480, 640, 3),  # Height, width, channels
+                "shape": (self.camera_height, self.camera_width, 3),  # Height, width, channels
                 "names": ["height", "width", "channel"],
             }
         

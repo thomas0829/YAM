@@ -231,23 +231,9 @@ def main():
 
     args = tyro.cli(Args)
 
-    # left, right front camera (the device id order is based on the plugged in order on the adapter)
-    ids = get_device_ids()
-    print(f"Found {len(ids)} camera devices")
-    print(ids)
-    cameras = {
-        "left_camera": RealSenseCamera(ids[0]),
-        "front_camera": RealSenseCamera(ids[1]),
-        "right_camera": RealSenseCamera(ids[2]),
-    }
-    
-    # Save to global for cleanup
-    global _cameras
-    _cameras = cameras
-
     bimanual = args.right_config_path is not None
 
-    # Load configs
+    # Load configs first (needed for camera settings)
     left_cfg = OmegaConf.to_container(
         OmegaConf.load(args.left_config_path), resolve=True
     )
@@ -257,6 +243,25 @@ def main():
             OmegaConf.load(args.right_config_path), resolve=True
         )
         right_cfg = update_offsets(right_cfg)
+
+    # left, right front camera (the device id order is based on the plugged in order on the adapter)
+    ids = get_device_ids()
+    print(f"Found {len(ids)} camera devices")
+    print(ids)
+    cameras = {}
+    cam_cfg = left_cfg.get('camera', {})
+    cam_w = cam_cfg.get('width', 640)
+    cam_h = cam_cfg.get('height', 480)
+    cam_fps = cam_cfg.get('fps', 30)
+    print(f"Camera resolution: {cam_w}x{cam_h} @ {cam_fps}fps")
+    camera_names = ["left_camera", "front_camera", "right_camera"]
+    for i, name in enumerate(camera_names):
+        if i < len(ids):
+            cameras[name] = RealSenseCamera(ids[i], width=cam_w, height=cam_h, fps=cam_fps)
+    
+    # Save to global for cleanup
+    global _cameras
+    _cameras = cameras
 
     # Initialize data saver and keyboard interface
     save_format = left_cfg['storage'].get('save_format', 'json')
@@ -338,6 +343,8 @@ def main():
             task_name=left_cfg['storage']['language_instruction'],
             robot_type="yam",
             camera_names=["left_camera", "front_camera", "right_camera"],
+            camera_width=cam_w,
+            camera_height=cam_h,
             use_videos=True,
             image_writer_processes=4,
             image_writer_threads=4,
@@ -480,6 +487,9 @@ def main():
         f"Launching robot: {robot.__class__.__name__}, agent: {agent.__class__.__name__}"
     )
     print(f"Control loop: {cfg.get('hz', 30)} Hz")
+
+    # All initialization complete — enable keyboard input
+    kb_interface.set_ready()
 
     # from gello.utils.control_utils import SaveInterface, run_control_loop
 

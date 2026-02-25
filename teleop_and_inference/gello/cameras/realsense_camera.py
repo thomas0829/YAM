@@ -150,11 +150,14 @@ class RealSenseCamera(CameraDriver):
     def __repr__(self) -> str:
         return f"RealSenseCamera(device_id={self._device_id})"
 
-    def __init__(self, device_id: Optional[str] = None, flip: bool = False):
+    def __init__(self, device_id: Optional[str] = None, flip: bool = False, width: int = 640, height: int = 480, fps: int = 30):
         import pyrealsense2 as rs
 
         self._device_id = device_id
         self._flip = flip
+        self._width = width
+        self._height = height
+        self._fps = fps
         self._lock = threading.Lock()
         self._warmup_frames = 15
 
@@ -181,8 +184,8 @@ class RealSenseCamera(CameraDriver):
             if self._device_id is not None:
                 self._config.enable_device(self._device_id)
 
-            self._config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-            self._config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+            self._config.enable_stream(rs.stream.depth, self._width, self._height, rs.format.z16, self._fps)
+            self._config.enable_stream(rs.stream.color, self._width, self._height, rs.format.bgr8, self._fps)
 
             self._pipeline.start(self._config)
 

@@ -304,7 +304,7 @@ def encode_video_frames(
     imgs_dir: Path | str,
     video_path: Path | str,
     fps: int,
-    vcodec: str = "libsvtav1",
+    vcodec: str = "h264_nvenc",
     pix_fmt: str = "yuv420p",
     g: int | None = 2,
     crf: int | None = 30,
@@ -315,8 +315,8 @@ def encode_video_frames(
 ) -> None:
     """More info on ffmpeg arguments tuning on `benchmark/video/README.md`"""
     # Check encoder availability
-    if vcodec not in ["h264", "hevc", "libsvtav1"]:
-        raise ValueError(f"Unsupported video codec: {vcodec}. Supported codecs are: h264, hevc, libsvtav1.")
+    if vcodec not in ["h264", "hevc", "libsvtav1", "h264_nvenc", "hevc_nvenc"]:
+        raise ValueError(f"Unsupported video codec: {vcodec}. Supported codecs are: h264, hevc, libsvtav1, h264_nvenc, hevc_nvenc.")
 
     video_path = Path(video_path)
     imgs_dir = Path(imgs_dir)
@@ -328,7 +328,7 @@ def encode_video_frames(
     video_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Encoders/pixel formats incompatibility check
-    if (vcodec == "libsvtav1" or vcodec == "hevc") and pix_fmt == "yuv444p":
+    if (vcodec in ["libsvtav1", "hevc", "h264_nvenc", "hevc_nvenc"]) and pix_fmt == "yuv444p":
         logging.warning(
             f"Incompatible pixel format 'yuv444p' for codec {vcodec}, auto-selecting format 'yuv420p'"
         )
@@ -348,20 +348,35 @@ def encode_video_frames(
 
     # Define video codec options
     video_options = {}
+    is_nvenc = vcodec in ["h264_nvenc", "hevc_nvenc"]
 
-    if g is not None:
+    # NVENC doesn't support 'g' as an option; GOP size is set via stream.gop_size later
+    if g is not None and not is_nvenc:
         video_options["g"] = str(g)
 
     if crf is not None:
         video_options["crf"] = str(crf)
 
     if fast_decode:
-        key = "svtav1-params" if vcodec == "libsvtav1" else "tune"
-        value = f"fast-decode={fast_decode}" if vcodec == "libsvtav1" else "fastdecode"
+        if vcodec == "libsvtav1":
+            key = "svtav1-params"
+            value = f"fast-decode={fast_decode}"
+        elif vcodec in ["h264_nvenc", "hevc_nvenc"]:
+            key = "tune"
+            value = "ll"  # low-latency for nvenc
+        else:
+            key = "tune"
+            value = "fastdecode"
         video_options[key] = value
 
     if vcodec == "libsvtav1":
         video_options["preset"] = str(preset) if preset is not None else "12"
+    elif vcodec in ["h264_nvenc", "hevc_nvenc"]:
+        video_options["preset"] = str(preset) if preset is not None else "p4"
+        # NVENC uses qp instead of crf
+        if "crf" in video_options:
+            video_options["qp"] = video_options.pop("crf")
+        video_options["rc"] = "constqp"
 
     # Set logging level
     if log_level is not None:
@@ -374,6 +389,10 @@ def encode_video_frames(
         output_stream.pix_fmt = pix_fmt
         output_stream.width = width
         output_stream.height = height
+
+        # Set GOP size for NVENC via stream attribute (min 4 supported)
+        if is_nvenc and g is not None:
+            output_stream.gop_size = max(g, 4)
 
         # Loop through input frames and encode them
         for input_data in input_list:
@@ -437,6 +456,9 @@ def concatenate_video_files(
         tmp_concatenate_file.flush()
         tmp_concatenate_path = tmp_concatenate_file.name
 
+    # Suppress FFmpeg internal log messages during concatenation
+    logging.getLogger("libav").setLevel(av.logging.ERROR)
+
     # Create input and output containers
     input_container = av.open(
         tmp_concatenate_path, mode="r", format="concat", options={"safe": "0"}
@@ -478,6 +500,9 @@ def concatenate_video_files(
     output_container.close()
     shutil.move(tmp_output_video_path, output_video_path)
     Path(tmp_concatenate_path).unlink()
+
+    # Reset logging level
+    av.logging.restore_default_callback()
 
 
 @dataclass

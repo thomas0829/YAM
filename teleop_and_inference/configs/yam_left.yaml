@@ -25,7 +25,7 @@ collection:
 
 # Data storage configuration
 storage:
-  episodes: 2
+  episodes: 50
   base_dir: "data"
   task_directory: "fold the towel"
   language_instruction: "Fold the towel."
@@ -36,6 +36,12 @@ storage:
   hf_user: thomas0829  # Hugging Face username (e.g., "your-username"), null for local only
   auto_upload: true  # Automatically upload to Hugging Face after data collection
   batch_encoding: true  # Batch encode videos at the end (much faster for multiple episodes)
+
+# Camera configuration
+camera:
+  width: 640
+  height: 360
+  fps: 30
 
 # Policy configuration
 policy:
