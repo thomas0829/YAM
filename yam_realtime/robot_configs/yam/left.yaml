@@ -28,6 +28,6 @@ joint_limits:
   - [-1.35, 1.35]
   - [-1.50, 1.50]
   - [-2.00, 2.00]
-gripper_limits: [0.0, -2.4] # a smaller opening, full opening is -2.7
+gripper_limits: [0.0, -5.28] # a smaller opening, full opening is -2.7
 limit_gripper_force: 0.15  # EXTREME: Ultra-gentle
 # gripper_type: "yam_small"

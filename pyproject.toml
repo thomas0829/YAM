@@ -48,7 +48,7 @@ dependencies = [
     "pyquaternion",
     "quaternion",
     "numpy-quaternion",
-    "PyQt6",
+    # "PyQt6",  # Install separately: conda install pyqt6 or pip install PyQt6 (requires qmake)
     "setuptools",
     "dynamixel-sdk @ file:./teleop_and_inference/third_party/DynamixelSDK/python",
     

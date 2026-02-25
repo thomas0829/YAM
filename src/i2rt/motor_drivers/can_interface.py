@@ -100,10 +100,11 @@ class CanInterface:
                 response = self._wait_for_expected_message(expected, self._response_timeout)
                 if response:
                     return response
-                logging.warning(
-                    f"{self.name}: timeout waiting for response id {expected:#x} "
-                    f"(attempt {attempt}/{max_retry})"
-                )
+                if attempt >= 5:
+                    logging.warning(
+                        f"{self.name}: timeout waiting for response id {expected:#x} "
+                        f"(attempt {attempt}/{max_retry})"
+                    )
             except (can.CanError, AssertionError) as e:
                 logging.warning(e)
                 logging.warning(

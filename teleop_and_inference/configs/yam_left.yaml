@@ -1,6 +1,7 @@
 robot:
   _target_: gello.robots.yam.YAMRobot
   channel: can_left
+  gripper_limits: [0.0, -5.2]
 agent:
   _target_: gello.agents.gello_agent.GelloAgent
   port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAO9WPU-if00-port0
@@ -24,10 +25,10 @@ collection:
 
 # Data storage configuration
 storage:
-  episodes: 50
+  episodes: 2
   base_dir: "data"
-  task_directory: "put the dolls on the cloth"
-  language_instruction: "Put the dolls on the cloth."
+  task_directory: "fold the towel"
+  language_instruction: "Fold the towel."
   teleop_device: "gello" # ["oculus", "keyboard", "gello", "none"]
   save_format: "lerobot" # ["json", "npy", "lerobot"]
   old_format: false

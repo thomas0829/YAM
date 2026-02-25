@@ -462,22 +462,30 @@ class LeRobotDataSaver:
         Finalize the dataset by writing metadata files (info.json, stats.json, etc.).
         Creates .gitattributes and README.md, then uploads to Hugging Face if enabled.
         """
+        print("[finalize] Starting finalization...")
         logger.info("Finalizing LeRobot dataset...")
         
         try:
             # Encode any remaining episodes if using batch encoding
             if hasattr(self.dataset, 'episodes_since_last_encoding') and self.dataset.episodes_since_last_encoding > 0:
+                print(f"[finalize] Encoding remaining {self.dataset.episodes_since_last_encoding} episodes...")
                 logger.info(f"Encoding remaining {self.dataset.episodes_since_last_encoding} episodes...")
                 start_ep = self.dataset.num_episodes - self.dataset.episodes_since_last_encoding
                 end_ep = self.dataset.num_episodes
+                print(f"[finalize] Batch encoding episodes {start_ep} to {end_ep - 1}")
                 logger.info(f"Batch encoding episodes {start_ep} to {end_ep - 1}")
                 self.dataset._batch_save_episode_video(start_ep, end_ep)
+                print("[finalize] Batch encoding done")
             
+            print("[finalize] Stopping image writer...")
             logger.info("Stopping image writer...")
             self.dataset.stop_image_writer()
+            print("[finalize] Image writer stopped")
             
+            print("[finalize] Calling dataset.finalize()...")
             logger.info("Calling dataset.finalize()...")
             self.dataset.finalize()
+            print("[finalize] Dataset finalize() completed")
             logger.info("Dataset finalize() completed")
             
             # Clean up empty images directory if it exists

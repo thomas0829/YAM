@@ -105,8 +105,8 @@ class GripperType(enum.Enum):
         """
         if self == GripperType.CRANK_4310:
             return (
-                0.03,  # EXTREME: Nearly zero threshold
-                1.0,
+                0.5,
+                0.2,
                 1.0,
                 partial(
                     zero_linkage_crank_gripper_force_torque_map,
@@ -284,7 +284,9 @@ class GripperForceLimiter:
             normalized_current_qpos = gripper_state["current_normalized_qpos"]
             normalized_target_qpos = gripper_state["target_normalized_qpos"]
             # 0 close 1 open
-            if (normalized_current_qpos < normalized_target_qpos) or average_effort < 0.2:  # want to open
+            # Only unclog if: (wants to open AND motor is actually moving) OR effort dropped
+            # The speed check prevents oscillation when motor is physically stuck
+            if (normalized_current_qpos < normalized_target_qpos and np.abs(current_speed) > self.clog_speed_threshold) or average_effort < 0.2:
                 self._is_clogged = False
         elif average_effort > self.clog_force_threshold and np.abs(current_speed) < self.clog_speed_threshold:
             self._is_clogged = True

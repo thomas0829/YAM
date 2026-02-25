@@ -119,6 +119,13 @@ class BimanualRobot(Robot):
 
         return return_obs
 
+    def close(self):
+        """Close both robots."""
+        if hasattr(self._robot_l, 'close'):
+            self._robot_l.close()
+        if hasattr(self._robot_r, 'close'):
+            self._robot_r.close()
+
 
 def main():
     pass

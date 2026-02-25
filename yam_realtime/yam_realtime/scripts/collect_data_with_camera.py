@@ -1,63 +1,68 @@
 #!/usr/bin/env python3
 # Collect data for a single task. Pair with oculus viser agent.
 
-# CRITICAL: Redirect stderr at OS level to filter OpenSSL warnings
+# # CRITICAL: Redirect stderr at OS level to filter OpenSSL warnings
+# import sys
+# import os
+# import io
+
+# # Set environment variable to disable RDRAND
+# os.environ['OPENSSL_ia32cap'] = '~0x200000200000000'
+
+# # Create a filtering wrapper for stderr at the file descriptor level
+# class StderrFilter:
+#     def __init__(self, fd):
+#         self.fd = fd
+#         self.buffer = b''
+        
+#     def write(self, data):
+#         if isinstance(data, str):
+#             data = data.encode('utf-8')
+#         # Filter out OpenSSL warnings
+#         lines = data.split(b'\n')
+#         filtered_lines = []
+#         for line in lines:
+#             if b'CPU random generator' not in line and b'RDRND generated' not in line:
+#                 filtered_lines.append(line)
+#         if filtered_lines:
+#             filtered_data = b'\n'.join(filtered_lines)
+#             os.write(self.fd, filtered_data)
+#         return len(data)
+    
+#     def fileno(self):
+#         return self.fd
+
+# # Redirect stderr file descriptor through our filter
+# original_stderr_fd = sys.stderr.fileno()
+# pipe_read, pipe_write = os.pipe()
+
+# # Fork a thread to filter stderr
+# import threading
+# def filter_stderr():
+#     while True:
+#         try:
+#             data = os.read(pipe_read, 4096)
+#             if not data:
+#                 break
+#             # Filter the data
+#             if b'CPU random generator' not in data and b'RDRND generated' not in data:
+#                 os.write(original_stderr_fd, data)
+#         except:
+#             break
+
+# # Save original stderr and redirect to pipe
+# saved_stderr = os.dup(2)
+# os.dup2(pipe_write, 2)
+# os.close(pipe_write)
+
+# # Start filtering thread
+# filter_thread = threading.Thread(target=filter_stderr, daemon=True)
+# filter_thread.start()
+
 import sys
 import os
 import io
-
-# Set environment variable to disable RDRAND
-os.environ['OPENSSL_ia32cap'] = '~0x200000200000000'
-
-# Create a filtering wrapper for stderr at the file descriptor level
-class StderrFilter:
-    def __init__(self, fd):
-        self.fd = fd
-        self.buffer = b''
-        
-    def write(self, data):
-        if isinstance(data, str):
-            data = data.encode('utf-8')
-        # Filter out OpenSSL warnings
-        lines = data.split(b'\n')
-        filtered_lines = []
-        for line in lines:
-            if b'CPU random generator' not in line and b'RDRND generated' not in line:
-                filtered_lines.append(line)
-        if filtered_lines:
-            filtered_data = b'\n'.join(filtered_lines)
-            os.write(self.fd, filtered_data)
-        return len(data)
-    
-    def fileno(self):
-        return self.fd
-
-# Redirect stderr file descriptor through our filter
-original_stderr_fd = sys.stderr.fileno()
-pipe_read, pipe_write = os.pipe()
-
-# Fork a thread to filter stderr
 import threading
-def filter_stderr():
-    while True:
-        try:
-            data = os.read(pipe_read, 4096)
-            if not data:
-                break
-            # Filter the data
-            if b'CPU random generator' not in data and b'RDRND generated' not in data:
-                os.write(original_stderr_fd, data)
-        except:
-            break
-
-# Save original stderr and redirect to pipe
-saved_stderr = os.dup(2)
-os.dup2(pipe_write, 2)
-os.close(pipe_write)
-
-# Start filtering thread
-filter_thread = threading.Thread(target=filter_stderr, daemon=True)
-filter_thread.start()
 
 import warnings
 from tkinter import Y
@@ -99,6 +104,7 @@ from yam_realtime.agents.teleoperation.oculus_viser_agent import OculusViserAgen
 from yam_realtime.envs.robot_env import RobotEnv
 from yam_realtime.utils.data_saver import DataSaver
 from yam_realtime.utils.lerobot_data_saver import LeRobotDataSaver
+from yam_realtime.utils.video_data_saver import VideoDataSaver
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple, Union
@@ -207,11 +213,15 @@ def main(args: Args):
             control_rate_hz=rate,
         )
 
-        reset_robot(agent, env, 'left')
-        reset_robot(agent, env, 'right')
+        # Reset robots (only reset the ones that are configured)
+        if 'left' in robots:
+            reset_robot(agent, env, 'left')
+        if 'right' in robots:
+            reset_robot(agent, env, 'right')
         
 
         logger.info("Starting control loop...")
+        
         # Get storage configuration
         storage_cfg = configs_dict['storage']
         task_name = storage_cfg.get('task_name', 'default_task')
@@ -225,7 +235,24 @@ def main(args: Args):
         save_dir_abs = (config_dir / save_dir).resolve() if not Path(save_dir).is_absolute() else Path(save_dir).resolve()
         
         # Initialize data saver based on format
-        if data_format == 'lerobot':
+        if data_format == 'video':
+            # Video format - only record camera feeds (no robot data)
+            camera_names = list(camera_dict.keys()) if camera_dict else []
+            logger.info(f"Using video format - cameras: {camera_names}")
+            
+            # Video format uses: output/{task_name}/{timestamp}/
+            # save_dir is ignored for video format, always use "output" in current directory
+            output_dir = Path.cwd() / 'output'
+            
+            data_saver = VideoDataSaver(
+                task_name=task_directory,
+                save_dir=str(output_dir),
+                fps=int(storage_cfg.get('fps', 30)),
+                camera_names=camera_names,
+            )
+            
+            logger.info(f"Video saver initialized: '{task_name}' -> {output_dir / task_directory}")
+        elif data_format == 'lerobot':
             camera_names = list(camera_dict.keys()) if camera_dict else []
             repo_id = task_directory  # Just "pick_up_the_cloth"
             
@@ -234,10 +261,10 @@ def main(args: Args):
             dataset_path = lerobot_root / repo_id
             
             if dataset_path.exists():
-                # Temporarily restore stderr for clean user input
-                sys.stderr.flush()
-                sys.stdout.flush()
-                os.dup2(saved_stderr, 2)
+                # # Temporarily restore stderr for clean user input
+                # sys.stderr.flush()
+                # sys.stdout.flush()
+                # os.dup2(saved_stderr, 2)
                 
                 # Clear screen and show prominent message
                 print("\n" + "="*80)
@@ -275,11 +302,11 @@ def main(args: Args):
                     print("Exiting...\n")
                     sys.exit(0)
                 
-                # Re-enable stderr filtering after user input
-                sys.stderr.flush()
-                sys.stdout.flush()
-                # Note: We don't redirect stderr back to pipe because it might cause issues
-                # The filter thread is already running and will handle new output
+                # # Re-enable stderr filtering after user input
+                # sys.stderr.flush()
+                # sys.stdout.flush()
+                # # Note: We don't redirect stderr back to pipe because it might cause issues
+                # # The filter thread is already running and will handle new output
             
             logger.info(f"Creating LeRobot dataset: {repo_id}")
             # Get total episodes to determine batch encoding size
@@ -436,13 +463,14 @@ def sum_delta_action(prev_delta, curr_delta):
 def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs_dict: Dict, data_saver) -> None:
     """
     Run the main control loop.
-    Supports both legacy JSON format (DataSaver) and LeRobot format (LeRobotDataSaver).
+    Supports legacy JSON format (DataSaver), LeRobot format (LeRobotDataSaver), and Video format (VideoDataSaver).
     """
-    # Check if using LeRobot format
-    is_lerobot = hasattr(data_saver, 'add_frame')
+    # Check data saver type
+    is_lerobot = isinstance(data_saver, LeRobotDataSaver)
+    is_video = isinstance(data_saver, VideoDataSaver)
     
     # Only use background thread for legacy JSON format
-    if not is_lerobot:
+    if not is_lerobot and not is_video:
         # Legacy format - use threaded saver
         previous_action = agent.act({})
         saver_thread = EpisodeSaverThread(data_saver)
@@ -457,7 +485,7 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
     last_save_time = time.time()
     hz = configs_dict['storage'].get('fps', 10)
     
-    if not is_lerobot:
+    if not is_lerobot and not is_video:
         delta_cumulative = {
             "left": {"delta" : np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])},
             "right": {"delta" : np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])}
@@ -471,7 +499,7 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
         # This resets IK position and clears prev_joints to prevent cumulative drift
         agent.act({})
         
-        if not is_lerobot:
+        if not is_lerobot and not is_video:
             data_saver.reset_buffer()
         
 
@@ -481,7 +509,6 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
             info = agent.get_info()
             if info["success"]:
                 logger.info(f"Successfully pressed 'A', starting to collect data")
-
                 time.sleep(2)
                 break
         logger.info(f"Press 'A' to save the data, press 'B' to discard the data")
@@ -492,16 +519,18 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
             # Check for manual motor disable (press 'X' button)
             if info.get("manual_disable", False):
                 logger.warning("Manual motor disable triggered!")
-                # Disable all motors
+                # Disable all motors (only for robots that exist)
                 try:
-                    env.robot('left').motor_off()
-                    env.robot('right').motor_off()
+                    if 'left' in env._robot_dict:
+                        env.robot('left').motor_off()
+                    if 'right' in env._robot_dict:
+                        env.robot('right').motor_off()
                     logger.info("All motors disabled")
                 except Exception as e:
                     logger.error(f"Error disabling motors: {e}")
                 break
             
-            while (not info["success"] and not info["failure"]) and not info["movement_enabled"]['left'] and not info["movement_enabled"]['right']:
+            while (not info["success"] and not info["failure"]) and not info.get("movement_enabled", {}).get('left', False) and not info.get("movement_enabled", {}).get('right', False):
                 info = agent.get_info()
             
             save = False
@@ -523,9 +552,21 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
             # note that we didn't really use obs (this is the outside world joints state containing pos, gripper, eff, vel)
             # we use viser agent to compute the action in 3D viser space, which is then solved by ik to get the joints position.
             # The action that the env.step() uses is the viser joints (the action returned by agent.act()).
-            if info["movement_enabled"]['left'] or info["movement_enabled"]['right']:
-                act = agent.act(obs)
-                action = {'left': {'pos':act['left']['pos']}, 'right': {'pos':act['right']['pos']}}
+            if info.get("movement_enabled", {}).get('left', False) or info.get("movement_enabled", {}).get('right', False):
+                try:
+                    act = agent.act(obs)
+                except Exception as e:
+                    logger.error(f"Error in agent.act: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    break
+                
+                # Build action dict only for available robots
+                action = {}
+                if 'left' in env._robot_dict and 'pos' in act.get('left', {}):
+                    action['left'] = {'pos': act['left']['pos']}
+                if 'right' in env._robot_dict and 'pos' in act.get('right', {}):
+                    action['right'] = {'pos': act['right']['pos']}
                 
                 # Save data at specified frequency
                 if time.time() - last_save_time > (1/hz):
@@ -536,6 +577,9 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
                             action=act,
                             timestamp=time.time()
                         )
+                    elif is_video:
+                        # Video format - only save camera observations
+                        data_saver.add_frame(observation=obs)
                     else:
                         # Legacy JSON format
                         delta_cumulative = sum_delta_action(delta_cumulative, act)
@@ -547,11 +591,24 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
                             "right": {"delta" : np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])}
                         }
                     last_save_time = time.time()
-                next_obs = env.step(action)
+                
+                try:
+                    next_obs = env.step(action)
+                except Exception as e:
+                    logger.error(f"Error in env.step: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    break
             else:
                 # Even when not moving, step with empty action to update camera observations
                 # This prevents duplicate frames in the video at the end
-                next_obs = env.step({})
+                try:
+                    next_obs = env.step({})
+                except Exception as e:
+                    logger.error(f"Error in env.step (empty): {e}")
+                    import traceback
+                    traceback.print_exc()
+                    break
             obs = next_obs.copy()
         
         if save:
@@ -564,6 +621,15 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
                     logger.info(f"Episode saved! (Video encoding continues in background)")
                 else:
                     logger.info(f"No data collected, skipping save")
+            elif is_video:
+                # Video format - save directly
+                if data_saver.episode_started:
+                    logger.info(f"Saving video episode {num_traj}...")
+                    data_saver.save_episode()
+                    num_traj += 1
+                    logger.info(f"Video episode saved!")
+                else:
+                    logger.info(f"No data collected, skipping save")
             else:
                 # Legacy JSON format - use thread
                 if data_saver.buffer == []:
@@ -574,11 +640,16 @@ def _run_control_loop(env: RobotEnv, agent: Agent, config: LaunchConfig, configs
                 logger.info(f"Successfully collected data")
         else:
             logger.info(f"Failure")
-        reset_robot(agent, env, 'left')
-        reset_robot(agent, env, 'right')
+        
+        # Reset robots (only reset the ones that are configured)
+        robot_dict = configs_dict.get('robots', {})
+        if 'left' in robot_dict:
+            reset_robot(agent, env, 'left')
+        if 'right' in robot_dict:
+            reset_robot(agent, env, 'right')
 
     # Stop saver thread (only for legacy format)
-    if not is_lerobot:
+    if not is_lerobot and not is_video:
         logger.info("Stopping background saver thread...")
         saver_thread.stop()
         logger.info("Waiting for all pending saves to complete...")

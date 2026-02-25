@@ -1,5 +1,5 @@
 motor_chain:
   channel: "can_right"
   motor_chain_name: "yam_right"
-  motor_offset: [0.0051, -0.0048, 0.0048, -0.0856, -0.0059, 0.1490, 0]
-gripper_limits: [0.0, -2.4] # a smaller opening, full opening is -2.7
+  motor_offset: [-0.0059, 0.0074, 0.0132, -0.0711, -0.0036, 0.0063, 0]
+gripper_limits: [0.0, -5.28] # a smaller opening, full opening is -2.7

@@ -23,7 +23,11 @@ def get_encoder_chain(can_interface: CanInterface) -> EncoderChain:
 def get_yam_robot(
     channel: str = "can0",
     gripper_type: GripperType = GripperType.CRANK_4310,
-    zero_gravity_mode:bool = True,
+    zero_gravity_mode: bool = True,
+    gripper_limits: list = None,
+    gripper_kp: float = None,
+    gripper_kd: float = None,
+    limit_gripper_force: float = None,
 ) -> MotorChainRobot:
     with_gripper = True
     with_teaching_handle = False
@@ -56,16 +60,18 @@ def get_yam_robot(
     
     if with_gripper:
         motor_type = gripper_type.get_motor_type()
-        gripper_kp, gripper_kd = gripper_type.get_motor_kp_kd()
+        default_gripper_kp, default_gripper_kd = gripper_type.get_motor_kp_kd()
+        final_gripper_kp = gripper_kp if gripper_kp is not None else default_gripper_kp
+        final_gripper_kd = gripper_kd if gripper_kd is not None else default_gripper_kd
         assert motor_type != ""
         logging.info(
-            f"adding gripper motor with type: {motor_type}, gripper_kp: {gripper_kp}, gripper_kd: {gripper_kd}"
+            f"adding gripper motor with type: {motor_type}, gripper_kp: {final_gripper_kp}, gripper_kd: {final_gripper_kd}"
         )
         motor_list.append([0x07, motor_type])
         motor_offsets.append(0.0)
         motor_directions.append(1)
-        kp = np.concatenate([kp, np.array([gripper_kp])])
-        kd = np.concatenate([kd, np.array([gripper_kd])])
+        kp = np.concatenate([kp, np.array([final_gripper_kp])])
+        kd = np.concatenate([kd, np.array([final_gripper_kd])])
 
     motor_chain = DMChainCanInterface(
         motor_list,
@@ -83,7 +89,12 @@ def get_yam_robot(
     current_pos = [m.pos for m in motor_states]
     logging.info(f"current_pos: {current_pos}")
 
+    gripper_motor_idx = 6 if with_gripper else None
+
     for idx, motor_state in enumerate(motor_states):
+        # Skip offset correction for gripper motor — its position can naturally exceed ±π
+        if idx == gripper_motor_idx:
+            continue
         motor_position = motor_state.pos
         # if not within -pi to pi, set to the nearest equivalent position
         if motor_position < -np.pi:
@@ -124,12 +135,15 @@ def get_yam_robot(
     )
 
     if with_gripper:
+        # Use YAML overrides if provided, otherwise fall back to GripperType defaults
+        final_gripper_limits = gripper_limits if gripper_limits is not None else gripper_type.get_gripper_limits()
+        final_limit_gripper_force = limit_gripper_force if limit_gripper_force is not None else 50.0
         return get_robot(
             gripper_index=6,
-            gripper_limits=gripper_type.get_gripper_limits(),
+            gripper_limits=final_gripper_limits,
             enable_gripper_calibration=gripper_type.get_gripper_needs_calibration(),
             gripper_type=gripper_type,
-            limit_gripper_force=50.0,
+            limit_gripper_force=final_limit_gripper_force,
         )
     else:
         return get_robot()

@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -8,10 +8,27 @@ from gello.robots.robot import Robot
 class YAMRobot(Robot):
     """A class representing a simulated YAM robot."""
 
-    def __init__(self, channel="can0"):
+    def __init__(
+        self,
+        channel: str = "can0",
+        gripper_type: str = "crank_4310",
+        gripper_limits: Optional[List[float]] = None,
+        gripper_kp: Optional[float] = None,
+        gripper_kd: Optional[float] = None,
+        limit_gripper_force: Optional[float] = None,
+    ):
         from i2rt.robots.get_robot import get_yam_robot
+        from i2rt.robots.utils import GripperType
 
-        self.robot = get_yam_robot(channel=channel)
+        gripper_type_enum = GripperType.from_string_name(gripper_type)
+        self.robot = get_yam_robot(
+            channel=channel,
+            gripper_type=gripper_type_enum,
+            gripper_limits=gripper_limits,
+            gripper_kp=gripper_kp,
+            gripper_kd=gripper_kd,
+            limit_gripper_force=limit_gripper_force,
+        )
 
         # YAM has 7 joints (6 arm joints + 1 gripper)
         self._joint_names = [
@@ -23,7 +40,7 @@ class YAMRobot(Robot):
             "joint6",
             "gripper",
         ]
-        self._joint_state = np.zeros(7)  # 7 joints
+        self._joint_state = self.get_joint_state()  # 7 joints
         self._joint_velocities = np.zeros(7)  # 7 joints
         self._gripper_state = 0.0
 
@@ -83,6 +100,12 @@ class YAMRobot(Robot):
             # Pad with zeros if we have fewer than 7 joints
             target_pos = np.pad(target_pos, (0, 7 - len(target_pos)), "constant")
         self.robot.command_joint_pos(np.array(target_pos))
+
+
+    def close(self):
+        """Close the underlying motor chain robot."""
+        if hasattr(self, 'robot') and hasattr(self.robot, 'close'):
+            self.robot.close()
 
 
 def main():

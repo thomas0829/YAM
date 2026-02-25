@@ -1,6 +1,7 @@
 robot:
   _target_: gello.robots.yam.YAMRobot
   channel: can_right
+  gripper_limits: [0.0, -5.2]
 agent:
   _target_: gello.agents.gello_agent.GelloAgent
   port: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTAO9WCV-if00-port0

@@ -501,58 +501,52 @@ def main():
     else:
         data_saver = run_control_loop_prior(env, agent, left_cfg=left_cfg, data_saver=data_saver, kb_interface=kb_interface)
     
-    # Data collection complete - now cleanup resources BEFORE video encoding
+    # === Step 1: Disconnect robot and release hardware ===
     print("\n" + "=" * 60)
     print("Data collection complete!")
-    print("Cleaning up robot and camera resources...")
+    print("Disconnecting robot and releasing hardware...")
     print("=" * 60)
-    cleanup()
     
-    # Now do video encoding with maximum resources available
+    # Save kb_interface ref before cleanup (cleanup will quit pygame)
+    _kb_ref = kb_interface
+    # Temporarily remove kb_interface from cleanup so pygame stays alive during finalization
+    _kb_interface = None
+    cleanup()
+    print("Robot disconnected.")
+    
+    # === Step 2: Encode videos ===
     if data_saver is not None and save_format == 'lerobot':
         print("\n" + "=" * 60)
         print("Starting video encoding (this may take several minutes)...")
-        print("All robot and camera resources have been released.")
         print("=" * 60)
         
-        kb_interface.update_status_and_draw(
-            state='Finalizing',
-            message='Encoding videos... Please wait'
-        )
-        
-        # Keep updating display during finalization
-        import threading
-        import time as time_module
-        
-        finalize_done = threading.Event()
-        
-        def finalize_thread():
-            data_saver.finalize()
-            finalize_done.set()
-        
-        # Start finalization in background
-        thread = threading.Thread(target=finalize_thread, daemon=True)
-        thread.start()
-        
-        # Update display while waiting
-        while not finalize_done.is_set():
-            kb_interface.update_status_and_draw(
-                state='Finalizing',
+        try:
+            _kb_ref.update_status_and_draw(
+                state='Encoding',
                 message='Encoding videos... Please wait'
             )
-            # Process pygame events to keep window responsive
-            pygame.event.pump()
-            time_module.sleep(0.5)
+        except Exception:
+            pass
         
-        thread.join()
+        data_saver.finalize()
+        
         print("\n" + "=" * 60)
         print("Video encoding complete!")
         print("=" * 60)
         
-        kb_interface.update_status_and_draw(state='Done', message='All done!')
-        time_module.sleep(2)  # Show final message
+        try:
+            _kb_ref.update_status_and_draw(state='Done', message='All done!')
+            time.sleep(2)
+        except Exception:
+            pass
     
-    # Explicitly exit the program - use os._exit to force immediate termination
+    # === Step 3: Quit pygame and exit ===
+    try:
+        import pygame
+        pygame.quit()
+    except Exception:
+        pass
+    
     import os
     os._exit(0)
 

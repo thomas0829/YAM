@@ -256,6 +256,54 @@ def main():
 
 
 
+    # Gripper homing: close gripper to minimum, then open to start position.
+    # Uses the direct `robot` object (BimanualRobot / YAMRobot) to bypass ZMQ.
+    def home_gripper():
+        """Close gripper fully then open to start_joints value.
+        
+        Uses the raw robot object directly (available in closure scope) 
+        instead of going through ZMQ, for more reliable startup homing.
+        get_joint_state() returns command-space values (gripper 0~1).
+        """
+        print("[home_gripper] Reading current joint state directly from robot...")
+        curr_joints = robot.get_joint_state()
+        print(f"[home_gripper] Current joint state ({len(curr_joints)} dofs): {curr_joints}")
+
+        closed_cmd = curr_joints.copy().astype(float)
+        if bimanual:
+            n = len(curr_joints) // 2
+            print(f"[home_gripper] Bimanual mode: left gripper idx={n-1}, right gripper idx={len(curr_joints)-1}")
+            print(f"[home_gripper] Current left gripper: {curr_joints[n-1]}, right gripper: {curr_joints[-1]}")
+            closed_cmd[n - 1] = 0.0   # left gripper closed
+            closed_cmd[-1] = 0.0      # right gripper closed
+        else:
+            print(f"[home_gripper] Single arm: gripper idx={len(curr_joints)-1}")
+            print(f"[home_gripper] Current gripper: {curr_joints[-1]}")
+            closed_cmd[-1] = 0.0       # gripper closed
+
+        print(f"[home_gripper] Closing gripper: interpolating {80} steps...")
+        for i, jnt in enumerate(np.linspace(curr_joints, closed_cmd, 80)):
+            robot.command_joint_state(jnt)
+            time.sleep(0.02)
+            if i % 20 == 0:
+                actual = robot.get_joint_state()
+                if bimanual:
+                    n2 = len(actual) // 2
+                    print(f"[home_gripper]   step {i}: cmd_grip_L={jnt[n2-1]:.3f} cmd_grip_R={jnt[-1]:.3f} | actual_grip_L={actual[n2-1]:.3f} actual_grip_R={actual[-1]:.3f}")
+                else:
+                    print(f"[home_gripper]   step {i}: cmd_grip={jnt[-1]:.3f} | actual_grip={actual[-1]:.3f}")
+
+        time.sleep(0.5)  # hold closed briefly
+        final = robot.get_joint_state()
+        if bimanual:
+            n2 = len(final) // 2
+            print(f"[home_gripper] Gripper closed. Final: left={final[n2-1]:.3f}, right={final[-1]:.3f}")
+        else:
+            print(f"[home_gripper] Gripper closed. Final: {final[-1]:.3f}")
+        print("[home_gripper] Now opening to start position...")
+
+    home_gripper()
+
     # Move robot to start_joints position if specified in config
     from gello.utils.launch_utils import move_to_start_position
 

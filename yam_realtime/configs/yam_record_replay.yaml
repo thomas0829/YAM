@@ -8,18 +8,24 @@ sensors:
         _target_: yam_realtime.sensors.cameras.camera.CameraNode
         camera:
             _target_: yam_realtime.sensors.cameras.opencv_camera.OpencvCamera
-            device_path: "/dev/video10"
+            device_path: "/dev/video4"
             camera_type: "realsense_camera"
     left_camera:
         _target_: yam_realtime.sensors.cameras.camera.CameraNode
         camera:
             _target_: yam_realtime.sensors.cameras.opencv_camera.OpencvCamera
-            device_path: "/dev/video4"
+            device_path: "/dev/video16"
+            camera_type: "realsense_camera"
+    right_camera:
+        _target_: yam_realtime.sensors.cameras.camera.CameraNode
+        camera:
+            _target_: yam_realtime.sensors.cameras.opencv_camera.OpencvCamera
+            device_path: "/dev/video10"
             camera_type: "realsense_camera"
 
 robots:
   left: ["robot_configs/yam/left.yaml"]
-  right: ["robot_configs/yam/left.yaml", "robot_configs/yam/right.yaml"]
+  right: ["robot_configs/yam/left.yaml", "robot_configs/yam/right.yaml"]  # Comment out for single arm
 
 agent:
   _target_: yam_realtime.agents.teleoperation.oculus_record.OculusRecordAgent
@@ -50,14 +56,14 @@ collection:
 
 # Data storage configuration
 storage:
-  format: "lerobot"  # "lerobot" or "json" (legacy)
-  episodes: 5
-  task_name: "Put the cubes on the cloth."
+  format: "lerobot"  # "lerobot", "json" (legacy), or "video" (camera only)
+  episodes: 50
+  task_name: "Fold the cloth."
   save_dir: "./data"
   fps: 30
   teleop_device: "oculus"  # ["oculus", "keyboard", "gello", "none"]
   save_format: "json"  # ["json", "npy"]
   
   # Hugging Face upload (only for lerobot format)
-  hf_user: "thomas0829"
+  hf_user: "hangyufeng"
   auto_upload: true

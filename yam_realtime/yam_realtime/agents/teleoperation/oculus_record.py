@@ -285,7 +285,7 @@ class OculusRecordAgent(Agent):
         for mesh in self.urdf_vis_left_real._meshes:
             mesh.opacity = 0.25  # type: ignore
         self.left_gripper_slider_handle = self.viser_server.gui.add_slider(
-            "Right Gripper", min=0.0, max=2.4, step=0.01, initial_value=2.4
+            "Right Gripper", min=0.0, max=1.0, step=0.01, initial_value=1.0
         )
 
         if self.bimanual and self.right_arm_extrinsic is not None:
@@ -304,7 +304,7 @@ class OculusRecordAgent(Agent):
             for mesh in self.urdf_vis_right_real._meshes:
                 mesh.opacity = 0.25  # type: ignore
             self.right_gripper_slider_handle = self.viser_server.gui.add_slider(
-                "Left Gripper", min=0.0, max=2.4, step=0.01, initial_value=2.4
+                "Left Gripper", min=0.0, max=1.0, step=0.01, initial_value=1.0
             )
 
         self.viser_cam_img_handles = {}
@@ -354,7 +354,10 @@ class OculusRecordAgent(Agent):
         
         viser_state = {
             "pos": {"left": np.concatenate([pose_left, xyzw_left]), "right": np.concatenate([pose_right, xyzw_right])},
-            "gripper" : {"left": obs["left"]["gripper_pos"], "right": obs["right"]["gripper_pos"]},
+            "gripper" : {
+                "left": obs["left"]["gripper_pos"] if "left" in obs else 0.0,
+                "right": obs["right"]["gripper_pos"] if "right" in obs else 0.0
+            },
         }
 
         viser_action = self._calc_delta_action(viser_state)
@@ -426,9 +429,13 @@ class OculusRecordAgent(Agent):
     @remote(serialization_needed=True)
     def get_info(self):
         try:
+            # Support both left (X/Y) and right (A/B) controller buttons
+            success = self.state["buttons"].get("X", False) or self.state["buttons"].get("A", False)
+            failure = self.state["buttons"].get("Y", False) or self.state["buttons"].get("B", False)
+            
             state_info = {
-                "success" : self.state["buttons"]["A"],
-                "failure" : self.state["buttons"]["B"],
+                "success" : success,
+                "failure" : failure,
                 "X" : self.state["buttons"]["X"],
                 "Y" : self.state["buttons"]["Y"],
                 "left_gripper" : self.state["buttons"].get("leftTrig", (0.0,))[0],
